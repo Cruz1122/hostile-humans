@@ -37,10 +37,10 @@ public class InvestigateSoundGoal extends Goal {
 			--this.calmDown;
 			return false;
 		} else {
-			if (this.pos == BlockPos.ZERO && this.mob instanceof Human investigator) {
+			if (BlockPos.ZERO.equals(this.pos) && this.mob instanceof Human investigator) {
 				this.pos = investigator.investigateSound();
 			}
-			if (this.pos == BlockPos.ZERO) return false;
+			if (BlockPos.ZERO.equals(this.pos)) return false;
 			return this.mob.blockPosition().distSqr(this.pos) < 1000D;
 		}
 	}

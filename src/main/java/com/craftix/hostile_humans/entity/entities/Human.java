@@ -126,7 +126,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 		return investigateSound;
 	}
     public void setInvestigateSound(BlockPos investigateSound) {
-		if (investigateSound == null || investigateSound == BlockPos.ZERO) {
+		if (investigateSound == null || BlockPos.ZERO.equals(investigateSound)) {
 			this.investigateSound = BlockPos.ZERO;
 			return;
 		}

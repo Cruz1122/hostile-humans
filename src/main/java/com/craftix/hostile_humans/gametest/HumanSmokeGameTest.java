@@ -60,12 +60,18 @@ public final class HumanSmokeGameTest {
         }
 
         BlockPos spawnPos = helper.absolutePos(new BlockPos(2, 1, 2));
-        BlockPos stimulusPos = helper.absolutePos(new BlockPos(6, 1, 2));
+        BlockPos stimulusPos = helper.absolutePos(new BlockPos(4, 1, 2));
         for (int x = 0; x <= 7; x++) {
             for (int z = 0; z <= 4; z++) {
                 helper.setBlock(new BlockPos(x, 0, z), Blocks.STONE.defaultBlockState());
             }
         }
+        for (int y = 1; y <= 3; y++) {
+            for (int z = 0; z <= 3; z++) {
+                helper.setBlock(new BlockPos(4, y, z), Blocks.STONE.defaultBlockState());
+            }
+        }
+        helper.setBlock(new BlockPos(4, 1, 2), Blocks.AIR.defaultBlockState());
         human.moveTo(spawnPos, 0.0F, 0.0F);
         human.addTag(DEBUG_TAG);
         human.setInvestigateSound(stimulusPos);

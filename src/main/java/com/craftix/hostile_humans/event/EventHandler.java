@@ -3,9 +3,11 @@ package com.craftix.hostile_humans.event;
 import com.craftix.hostile_humans.compat.CollectiveVillagerNames;
 import com.craftix.hostile_humans.compat.FarmersDelight;
 import com.craftix.hostile_humans.entity.entities.Human;
+import com.craftix.hostile_humans.entity.equipment.MeleeWeaponSelector;
 //import com.natamus.villagernames_common_forge.util.Names;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.Mob;
@@ -59,6 +61,21 @@ public class EventHandler {
         if (!addedFarmerItems && ModList.get().isLoaded("farmersdelight")) {
             FarmersDelight.addFoodItems();
             addedFarmerItems = true;
+        }
+        validateEquipmentTags();
+    }
+
+    private void validateEquipmentTags() {
+        validateTag(MeleeWeaponSelector.PRIMARY_MELEE_WEAPONS, "primary melee weapons");
+        validateTag(MeleeWeaponSelector.FALLBACK_MELEE_TOOLS, "fallback melee tools");
+    }
+
+    private void validateTag(net.minecraft.tags.TagKey<Item> tag, String name) {
+        int size = BuiltInRegistries.ITEM.getTag(tag).map(values -> values.size()).orElse(0);
+        if (size == 0) {
+            HostileHumans.LOGGER.warn("Critical equipment tag {} is empty: {}", name, tag.location());
+        } else {
+            HostileHumans.LOGGER.debug("Loaded {} equipment candidates from {}", size, tag.location());
         }
     }
 
@@ -124,5 +141,4 @@ public class EventHandler {
         }
     }
 }
-
 

@@ -53,6 +53,7 @@ public class HostileHumans {
         final IEventBus forgeEventBus = MinecraftForge.EVENT_BUS;
 
         ModLoadingContext.get().registerConfig(ModConfig.Type.COMMON, Config.SPEC, "hostile_humans.toml");
+        ModLoadingContext.get().registerConfig(ModConfig.Type.SERVER, Config.SERVER_SPEC, "hostile_humans-server.toml");
 
         modEventBus.addListener(NetworkHandler::registerNetworkHandler);
         modEventBus.addListener(HostileHumans::buildCreativeTabContents);

@@ -1,6 +1,7 @@
 package com.craftix.hostile_humans;
 
 import com.craftix.hostile_humans.entity.entities.Human;
+import com.craftix.hostile_humans.entity.equipment.MeleeWeaponSelector;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -87,7 +88,7 @@ public class HumanUtil {
     }
 
     public static boolean isMeleeWeapon(ItemStack value) {
-        return !value.isEmpty() && (value.getItem() instanceof SwordItem || value.getItem() instanceof AxeItem);
+        return MeleeWeaponSelector.isMeleeCandidate(value);
     }
 
     public static boolean isTrident(ItemStack value) {
@@ -222,4 +223,3 @@ public class HumanUtil {
         return String.valueOf(human.getId()).hashCode() % 100 < 20;
     }
 }
-

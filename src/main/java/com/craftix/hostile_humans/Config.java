@@ -7,6 +7,8 @@ import net.minecraftforge.common.ForgeConfigSpec;
 public class Config {
     public static final ForgeConfigSpec.Builder BUILDER = new ForgeConfigSpec.Builder();
     public static final ForgeConfigSpec SPEC;
+    public static final ForgeConfigSpec.Builder SERVER_BUILDER = new ForgeConfigSpec.Builder();
+    public static final ForgeConfigSpec SERVER_SPEC;
 
     public static ForgeConfigSpec.ConfigValue<String> disabledStructures;
     public static ForgeConfigSpec.ConfigValue<Integer> maxTargeting;
@@ -32,6 +34,11 @@ public class Config {
     public static ForgeConfigSpec.ConfigValue<Boolean> noWaystones;
     public static ForgeConfigSpec.ConfigValue<Double> midBattleBuffInsteadOfRunTestChance;
     public static ForgeConfigSpec.EnumValue<SpawnerEntity.SpawnType> eventType;
+    public static ForgeConfigSpec.BooleanValue enableFallbackToolWeapons;
+    public static ForgeConfigSpec.BooleanValue enableCobwebPlacement;
+    public static ForgeConfigSpec.IntValue cobwebCooldownTicks;
+    public static ForgeConfigSpec.IntValue maxCobwebsPerCombat;
+    public static ForgeConfigSpec.DoubleValue cobwebPlacementReach;
 
     static {
         BUILDER.push("Hostile Humans Settings");
@@ -57,9 +64,22 @@ public class Config {
         noWaystones = BUILDER.comment("Should waystones not load in structures even with the mod present").define("no_waystones", false);
         eventType = BUILDER.comment("Which type of battle event should occur").defineEnum("battle_event", SpawnerEntity.SpawnType.Random);
 
+        SERVER_BUILDER.push("tacticalEquipment");
+        enableFallbackToolWeapons = SERVER_BUILDER.comment("Allow pickaxes, shovels and hoes as melee fallback weapons")
+                .define("enableFallbackToolWeapons", true);
+        enableCobwebPlacement = SERVER_BUILDER.comment("Allow humans to place tactical cobwebs while retreating")
+                .define("enableCobwebPlacement", true);
+        cobwebCooldownTicks = SERVER_BUILDER.comment("Cooldown between tactical cobweb placements")
+                .defineInRange("cobwebCooldownTicks", 80, 20, 600);
+        maxCobwebsPerCombat = SERVER_BUILDER.comment("Maximum tactical cobwebs placed by one human per combat")
+                .defineInRange("maxCobwebsPerCombat", 2, 0, 8);
+        cobwebPlacementReach = SERVER_BUILDER.comment("Maximum distance from the human for a tactical cobweb")
+                .defineInRange("cobwebPlacementReach", 2.5D, 1.0D, 4.5D);
+        SERVER_BUILDER.pop();
+
         BUILDER.pop();
 
         SPEC = BUILDER.build();
+        SERVER_SPEC = SERVER_BUILDER.build();
     }
 }
-

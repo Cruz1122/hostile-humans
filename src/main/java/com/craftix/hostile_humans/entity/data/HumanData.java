@@ -145,30 +145,30 @@ public class HumanData {
     }
 
     public boolean storeInventoryItem(ItemStack itemStack) {
-        if (itemStack.getMaxStackSize() > 1) {
-            Item item = itemStack.getItem();
-            int numberOfItems = itemStack.getCount();
-            //               ⬇️⬇️ pick up limiter to 10 items ⬇️⬇️
-            for (int index = getInventoryItemsSize() - 10; index < getInventoryItemsSize(); index++) {
-                ItemStack existingItems = getInventoryItem(index);
-                if (!existingItems.isEmpty() && existingItems.is(item)
-                        && existingItems.getCount() + numberOfItems < existingItems.getMaxStackSize()) {
-                    existingItems.grow(numberOfItems);
-                    return true;
+        boolean stored = false;
+        int firstPickupSlot = getInventoryItemsSize() - 10;
+        for (int index = firstPickupSlot; index < getInventoryItemsSize() && !itemStack.isEmpty(); index++) {
+            ItemStack existingItems = getInventoryItem(index);
+            if (!existingItems.isEmpty() && ItemStack.isSameItemSameTags(existingItems, itemStack)) {
+                int room = Math.min(existingItems.getMaxStackSize(), itemStack.getMaxStackSize()) - existingItems.getCount();
+                if (room > 0) {
+                    int moved = Math.min(room, itemStack.getCount());
+                    existingItems.grow(moved);
+                    itemStack.shrink(moved);
+                    stored = true;
                 }
             }
         }
-
-        //               ⬇️⬇️ pick up limiter to 10 items ⬇️⬇️
-        for (int index = getInventoryItemsSize() - 10; index < getInventoryItemsSize(); index++) {
-            ItemStack existingItems = getInventoryItem(index);
-            if (existingItems.isEmpty()) {
-                setInventoryItem(index, itemStack);
-                return true;
+        for (int index = firstPickupSlot; index < getInventoryItemsSize() && !itemStack.isEmpty(); index++) {
+            if (getInventoryItem(index).isEmpty()) {
+                int moved = Math.min(itemStack.getCount(), itemStack.getMaxStackSize());
+                ItemStack inserted = itemStack.copyWithCount(moved);
+                setInventoryItem(index, inserted);
+                itemStack.shrink(moved);
+                stored = true;
             }
         }
-
-        return false;
+        return stored;
     }
 
     public void load(HumanEntity humanMob) {

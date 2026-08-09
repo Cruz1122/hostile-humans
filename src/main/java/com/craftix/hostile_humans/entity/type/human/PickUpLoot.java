@@ -45,10 +45,16 @@ public class PickUpLoot extends HumanAbility {
                         if (itemEntity.isRemoved()) continue;
                         if (itemEntity.isAlive() && humanEntity.isAlive() && !humanEntity.isDeadOrDying() && humanMobData.storeInventoryItem(itemEntity.getItem())) {
                             ItemStack itemstack = itemEntity.getItem();
-                            Item item = itemstack.getItem();
-
-                            humanEntity.take(itemEntity, itemEntity.getItem().getCount());
-                            itemEntity.discard();
+                            humanEntity.take(itemEntity, itemstack.getCount());
+                            if (itemstack.isEmpty()) {
+                                itemEntity.discard();
+                            } else {
+                                itemEntity.setItem(itemstack);
+                            }
+                            if (humanEntity instanceof com.craftix.hostile_humans.entity.entities.Human human) {
+                                human.markEquipmentDirty();
+                                human.reevaluateEquipment();
+                            }
                         }
                     }
                 }

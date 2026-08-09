@@ -1,0 +1,23 @@
+{
+  "replace": false,
+  "values": [
+    "minecraft:bread",
+    "minecraft:apple",
+    "minecraft:golden_apple",
+    "minecraft:enchanted_golden_apple",
+    "minecraft:potion",
+    "minecraft:splash_potion",
+    "minecraft:lingering_potion",
+    "minecraft:arrow",
+    "minecraft:spectral_arrow",
+    "minecraft:cobweb",
+    "minecraft:iron_ingot",
+    "minecraft:gold_ingot",
+    "minecraft:diamond",
+    "minecraft:emerald",
+    "minecraft:stick",
+    "minecraft:dirt",
+    "minecraft:stone",
+    "minecraft:oak_planks"
+  ]
+}

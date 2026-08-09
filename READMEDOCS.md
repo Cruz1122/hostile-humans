@@ -1,4 +1,56 @@
- # Human Gear JSON System
+# Human Gear JSON System
+
+## Tactical equipment
+
+Humans use a deterministic melee policy when they enter close combat or finish
+collecting an item. Primary melee items are selected before fallback tools.
+Primary items include swords and axes through the `hostile_humans:primary_melee_weapons`
+item tag. Pickaxes, shovels and hoes are available only through
+`hostile_humans:fallback_melee_tools`, and are never preferred over a usable
+primary item. The `hostile_humans:never_use_as_melee_weapon` tag can veto an item.
+Modpacks can extend these tags with a datapack without changing Java code.
+
+The score within a category combines effective main-hand attack damage,
+applicable offensive enchantment damage, remaining durability and a near-break
+penalty. Category always dominates the score. Ties keep the current item, then
+use inventory slot and registry ID as stable tie-breakers. Selection is not
+performed every tick: it is marked dirty after pickup, loadout generation,
+loading, combat transitions and weapon breakage.
+
+Server interaction settings are written to `hostile_humans-server.toml`:
+
+```toml
+[tacticalEquipment]
+enableFallbackToolWeapons = true
+enableCobwebPlacement = true
+cobwebCooldownTicks = 80
+maxCobwebsPerCombat = 2
+cobwebPlacementReach = 2.5
+```
+
+During an existing retreat, a human may place only `minecraft:cobweb` in a
+small deterministic candidate set behind its route. It requires a real cobweb
+stack, a living nearby threat, a loaded chunk, a replaceable supported block,
+no self/target intersection, no nearby equivalent cobweb, available cooldown,
+and remaining combat quota. Placement is server-side, consumes exactly one
+stack item only after success, respects Forge placement cancellation and
+`mobGriefing`, and does not load chunks, break blocks, or place in BlockEntities.
+
+Manual scenarios:
+
+- `function hostile_humans:debug/weapon_primary`
+- `function hostile_humans:debug/weapon_fallback`
+- `function hostile_humans:debug/weapon_upgrade`
+- `function hostile_humans:debug/cobweb_retreat`
+
+GameTests are grouped in `tacticalEquipment` and `tacticalCobweb` batches and
+cover primary-over-fallback selection, fallback use, pickup upgrade, invalid
+items, stable ties, successful placement and consumption, empty inventory,
+`mobGriefing`, support validation and cooldown.
+
+Pillaring, bridging, barricades, mining and general block construction remain
+future work. A possible future boundary is `TacticalWorldActionController`
+with separate `PillarUpAction` and `BridgeGapAction` implementations.
 
   ## Overview
 

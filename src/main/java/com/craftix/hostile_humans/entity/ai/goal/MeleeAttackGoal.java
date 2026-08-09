@@ -4,6 +4,7 @@ import com.craftix.hostile_humans.Config;
 import com.craftix.hostile_humans.HumanUtil;
 import com.craftix.hostile_humans.entity.HumanEntity;
 import com.craftix.hostile_humans.entity.entities.Human;
+import com.craftix.hostile_humans.entity.equipment.MeleeWeaponSelector;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.player.Player;
@@ -202,7 +203,7 @@ public class MeleeAttackGoal extends HumanGoal {
         if (!(this.mob instanceof Human human) || !(target instanceof Player)) {
             return true;
         }
-        if (!HumanUtil.isMeleeWeapon(human.getMainHandItem()) && !HumanUtil.isTrident(human.getMainHandItem())) {
+        if (!MeleeWeaponSelector.isMeleeCandidate(human.getMainHandItem()) && !HumanUtil.isTrident(human.getMainHandItem())) {
             return true;
         }
 
@@ -219,7 +220,7 @@ public class MeleeAttackGoal extends HumanGoal {
             if (otherHuman.isFleeing || otherHuman.healingAfterFleeTicks > 0 || otherHuman.isSleepingOrLyingDown()) {
                 return false;
             }
-            if (!HumanUtil.isMeleeWeapon(otherHuman.getMainHandItem()) && !HumanUtil.isTrident(otherHuman.getMainHandItem())) {
+            if (!MeleeWeaponSelector.isMeleeCandidate(otherHuman.getMainHandItem()) && !HumanUtil.isTrident(otherHuman.getMainHandItem())) {
                 return false;
             }
             return otherHuman.distanceToSqr(target) <= myDistance;

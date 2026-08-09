@@ -7,6 +7,8 @@ import com.craftix.hostile_humans.entity.HumanEntity;
 import com.craftix.hostile_humans.entity.PotionRangedAttackMob;
 import com.craftix.hostile_humans.entity.ai.control.HumanEntityWalkControl;
 import com.craftix.hostile_humans.entity.ai.goal.*;
+import com.craftix.hostile_humans.entity.ai.action.PlaceCobwebAction;
+import com.craftix.hostile_humans.entity.equipment.MeleeWeaponSelector;
 import com.google.common.collect.Maps;
 import net.minecraft.Util;
 import net.minecraft.core.BlockPos;
@@ -108,6 +110,10 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     public int switchingWeaponCoolDown;
     public int meleeFlurryHitsRemaining;
     public int meleeFlurryDamageTicks;
+    public int cobwebCooldown;
+    public int cobwebsPlacedThisCombat;
+    private boolean equipmentDirty = true;
+    private boolean evaluatingEquipment;
 
     public int onPlayerJumpCoolDown;
     public int eatingColldown;
@@ -429,6 +435,14 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         this.resetFallDistance();
         boolean result = super.doHurtTarget(entityIn);
 
+        if (result && !getMainHandItem().isEmpty() && getMainHandItem().isDamageableItem()) {
+            getMainHandItem().hurtAndBreak(1, this, entity -> entity.broadcastBreakEvent(EquipmentSlot.MAINHAND));
+            if (getMainHandItem().isEmpty()) {
+                setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+                markEquipmentDirty();
+            }
+        }
+
         swing(InteractionHand.MAIN_HAND);
         return result;
     }
@@ -472,6 +486,9 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     @Override
     public void setItemSlot(EquipmentSlot slotIn, ItemStack stack) {
         super.setItemSlot(slotIn, stack);
+        if (slotIn == EquipmentSlot.MAINHAND && !evaluatingEquipment) {
+            equipmentDirty = true;
+        }
         if (!this.level().isClientSide && !stack.isEmpty()) {
             this.setCombatTask();
         }
@@ -543,6 +560,8 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         compound.putInt("InvestigateSoundX", this.investigateSound.getX());
         compound.putInt("InvestigateSoundY", this.investigateSound.getY());
         compound.putInt("InvestigateSoundZ", this.investigateSound.getZ());
+        compound.putInt("CobwebCooldown", this.cobwebCooldown);
+        compound.putInt("CobwebsPlacedThisCombat", this.cobwebsPlacedThisCombat);
     }
 
     @Override
@@ -552,6 +571,9 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
                 compound.getInt("InvestigateSoundX"),
                 compound.getInt("InvestigateSoundY"),
                 compound.getInt("InvestigateSoundZ"));
+        this.cobwebCooldown = Math.max(0, compound.getInt("CobwebCooldown"));
+        this.cobwebsPlacedThisCombat = Math.max(0, compound.getInt("CobwebsPlacedThisCombat"));
+        this.equipmentDirty = true;
         setCombatTask();
     }
 
@@ -596,6 +618,10 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         LivingEntity previousTarget = this.getTarget();
         super.setTarget(livingEntity);
 
+        if (livingEntity != null && previousTarget == null) {
+            cobwebsPlacedThisCombat = 0;
+        }
+
         if (this.level().isClientSide) {
             return;
         }
@@ -610,6 +636,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     public void finalizeSpawn() {
         super.finalizeSpawn();
         generateInventory(this, false);
+        equipmentDirty = true;
     }
 
     @Override
@@ -1006,6 +1033,9 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             tryEquipWeapon();
             tryEatingTick();
             tryEquipPotion();
+            if (isFleeing) {
+                PlaceCobwebAction.tryPlace(this);
+            }
         }
         if (tickCount % (20 * 15) == 0) {
             setCombatTask();
@@ -1192,6 +1222,10 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     private void tryEquipWeapon() {
 
+        if (equipmentDirty && !isUsingItem() && !isFleeing) {
+            reevaluateEquipment();
+        }
+
         if (getTarget() == null && tickCount % (20 * 10) == 0) {
             equipWeapon(HumanUtil::isRangedWeapon);
         }
@@ -1214,8 +1248,8 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
                 ItemStack handItem = getItemBySlot(EquipmentSlot.MAINHAND);
                 boolean forcedMelee = this.getHealth() <= this.getMaxHealth() * 0.3f && String.valueOf(getId()).hashCode() % 100 < 20;
 
-                if ((forcedMelee || !isTargetFar) && !isMeleeWeapon(handItem)) {
-                    equipWeapon(HumanUtil::isMeleeWeapon);
+                if ((forcedMelee || !isTargetFar) && !MeleeWeaponSelector.isMeleeCandidate(handItem)) {
+                    reevaluateEquipment();
                 } else if (isTargetFar && !isRangedWeapon(handItem)) {
                     equipWeapon(HumanUtil::isRangedWeapon);
                 }
@@ -1224,6 +1258,28 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         }
 
         tryUsePreAttackBuff();
+    }
+
+    public void markEquipmentDirty() {
+        this.equipmentDirty = true;
+    }
+
+    public void reevaluateEquipment() {
+        if (level().isClientSide || evaluatingEquipment || isUsingItem()
+                || isFleeing || getData() == null) {
+            return;
+        }
+        evaluatingEquipment = true;
+        try {
+            MobType targetType = getTarget() == null ? MobType.UNDEFINED : getTarget().getMobType();
+            if (MeleeWeaponSelector.equipBest(this, targetType)) {
+                switchingWeaponCoolDown = Math.max(switchingWeaponCoolDown, 20);
+                setCombatTask();
+            }
+            equipmentDirty = false;
+        } finally {
+            evaluatingEquipment = false;
+        }
     }
 
     @Override
@@ -1242,6 +1298,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
         if (this.shieldCoolDown > 0) --this.shieldCoolDown;
         if (this.switchingWeaponCoolDown > 0) --this.switchingWeaponCoolDown;
+        if (this.cobwebCooldown > 0) --this.cobwebCooldown;
 
         if (this.onPlayerJumpCoolDown > 0) --this.onPlayerJumpCoolDown;
         if (this.eatingColldown > 0) --this.eatingColldown;

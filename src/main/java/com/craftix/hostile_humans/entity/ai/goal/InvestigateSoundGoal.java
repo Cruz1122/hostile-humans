@@ -59,7 +59,7 @@ public class InvestigateSoundGoal extends Goal {
 	public void start() {
         if (this.mob instanceof Human investigator) {
             this.pos = investigator.investigateSound();
-        }
+		}
 		this.hasInvestigated = false;
 		this.searchTicksRemaining = reducedTickDelay(60);
 	}
@@ -83,6 +83,15 @@ public class InvestigateSoundGoal extends Goal {
 	 * Keep ticking a continuous task that has already been started
 	 */
 	public void tick() {
+		if (this.mob instanceof Human investigator) {
+			BlockPos latestSound = investigator.investigateSound();
+			if (!BlockPos.ZERO.equals(latestSound) && !latestSound.equals(this.pos)) {
+				this.pos = latestSound;
+				this.hasInvestigated = false;
+				this.searchTicksRemaining = reducedTickDelay(60);
+			}
+		}
+
 		if (this.mob.blockPosition().distSqr(this.pos) < 5D) {
 			this.mob.getNavigation().stop();
 			this.hasInvestigated = true;

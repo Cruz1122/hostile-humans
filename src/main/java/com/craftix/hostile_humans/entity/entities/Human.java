@@ -12,6 +12,8 @@ import net.minecraft.Util;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.tags.FluidTags;
@@ -53,6 +55,11 @@ import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.ServerLevelAccessor;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.gameevent.DynamicGameEventListener;
+import net.minecraft.world.level.gameevent.EntityPositionSource;
+import net.minecraft.world.level.gameevent.GameEvent;
+import net.minecraft.world.level.gameevent.PositionSource;
+import net.minecraft.world.level.gameevent.vibrations.VibrationSystem;
 import net.minecraft.world.level.pathfinder.BlockPathTypes;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.common.ForgeMod;
@@ -63,6 +70,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 
 import static com.craftix.hostile_humans.Config.throwPotionsEvery;
@@ -70,7 +78,7 @@ import static com.craftix.hostile_humans.HumanUtil.*;
 import static com.craftix.hostile_humans.entity.entities.HumanInventoryGenerator.generateInventory;
 import static com.craftix.hostile_humans.entity.entities.ModEntityType.ROAMER;
 
-public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttackMob, PotionRangedAttackMob {
+public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttackMob, PotionRangedAttackMob, VibrationSystem {
 
     public static final ItemStack[] EXTRA_EDIBLE_ITEMS = new ItemStack[]{Items.GOLDEN_APPLE.getDefaultInstance(), PotionUtils.setPotion(Items.POTION.getDefaultInstance(), Potions.REGENERATION), PotionUtils.setPotion(Items.POTION.getDefaultInstance(), Potions.HEALING)};
     public static final ItemStack[] PRE_ATTACK_BUFF_ITEMS = new ItemStack[]{
@@ -121,10 +129,20 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     @Nullable
     public LivingEntity toAvoid;
     // Investigate Sound
+    private static final int SOUND_LISTENER_RANGE = 16;
     public BlockPos investigateSound = BlockPos.ZERO;
+    private final DynamicGameEventListener<VibrationSystem.Listener> dynamicGameEventListener;
+    private final VibrationSystem.User vibrationUser;
+    private final VibrationSystem.Data vibrationData;
+
     public BlockPos investigateSound() {
 		return investigateSound;
 	}
+
+    public boolean isInvestigatingSound() {
+        return !BlockPos.ZERO.equals(this.investigateSound);
+    }
+
     public void setInvestigateSound(BlockPos investigateSound) {
 		if (investigateSound == null || BlockPos.ZERO.equals(investigateSound)) {
 			this.investigateSound = BlockPos.ZERO;
@@ -133,6 +151,101 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
 		this.investigateSound = investigateSound.offset(this.random.nextInt(-1, 2), 0, this.random.nextInt(-1, 2));
 	}
+
+    @Override
+    public VibrationSystem.Data getVibrationData() {
+        return this.vibrationData;
+    }
+
+    @Override
+    public VibrationSystem.User getVibrationUser() {
+        return this.vibrationUser;
+    }
+
+    @Override
+    public void updateDynamicGameEventListener(
+            BiConsumer<DynamicGameEventListener<?>, ServerLevel> listenerConsumer) {
+        if (this.level() instanceof ServerLevel serverLevel) {
+            listenerConsumer.accept(this.dynamicGameEventListener, serverLevel);
+        }
+    }
+
+    private static boolean isPlayerMovementEvent(GameEvent event) {
+        return event == GameEvent.STEP
+                || event == GameEvent.SWIM
+                || event == GameEvent.SPLASH
+                || event == GameEvent.HIT_GROUND
+                || event == GameEvent.ELYTRA_GLIDE
+                || event == GameEvent.FLAP;
+    }
+
+    private static boolean isHandledByExistingStimulusHook(GameEvent event, @Nullable Entity sourceEntity) {
+        if (event == GameEvent.ENTITY_DAMAGE) {
+            return true;
+        }
+        if (event == GameEvent.BLOCK_DESTROY) {
+            return sourceEntity instanceof Player;
+        }
+        if (event == GameEvent.BLOCK_PLACE) {
+            return sourceEntity instanceof ServerPlayer;
+        }
+        return event == GameEvent.EXPLODE && sourceEntity != null;
+    }
+
+    private final class HumanVibrationUser implements VibrationSystem.User {
+        private final PositionSource positionSource = new EntityPositionSource(
+                Human.this, Human.this.getEyeHeight());
+
+        @Override
+        public int getListenerRadius() {
+            return SOUND_LISTENER_RANGE;
+        }
+
+        @Override
+        public PositionSource getPositionSource() {
+            return this.positionSource;
+        }
+
+        @Override
+        public boolean canReceiveVibration(
+                ServerLevel level,
+                BlockPos sourcePos,
+                GameEvent event,
+                GameEvent.Context context) {
+            if (Human.this.isNoAi()
+                    || !Human.this.isAlive()
+                    || Human.this.isSleepingOrLyingDown()
+                    || Human.this.getTarget() != null
+                    || !level.getWorldBorder().isWithinBounds(sourcePos)) {
+                return false;
+            }
+
+            Entity sourceEntity = context.sourceEntity();
+            if (sourceEntity instanceof Human) {
+                return false;
+            }
+            if (sourceEntity instanceof Projectile projectile && projectile.getOwner() instanceof Human) {
+                return false;
+            }
+            if (isPlayerMovementEvent(event) && !(sourceEntity instanceof Player)) {
+                return false;
+            }
+            return !isHandledByExistingStimulusHook(event, sourceEntity);
+        }
+
+        @Override
+        public void onReceiveVibration(
+                ServerLevel level,
+                BlockPos sourcePos,
+                GameEvent event,
+                @Nullable Entity sourceEntity,
+                @Nullable Entity projectileOwner,
+                float distance) {
+            if (Human.this.getTarget() == null) {
+                Human.this.setInvestigateSound(sourcePos);
+            }
+        }
+    }
 
     // Chest
     public int lookForChestCooldown;
@@ -159,6 +272,9 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     public Human(EntityType<? extends HumanEntity> entityType, Level level, HumanTier type) {
         super(entityType, level);
+        this.vibrationUser = new HumanVibrationUser();
+        this.vibrationData = new VibrationSystem.Data();
+        this.dynamicGameEventListener = new DynamicGameEventListener<>(new VibrationSystem.Listener(this));
         this.setPathfindingMalus(BlockPathTypes.WATER, 0.0F);
         this.setCanPickUpLoot(true);
 //        this.setCustomName(null);
@@ -752,6 +868,9 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     @Override
     public void tick() {
+        if (this.level() instanceof ServerLevel serverLevel) {
+            VibrationSystem.Ticker.tick(serverLevel, this.vibrationData, this.vibrationUser);
+        }
         super.tick();
         sanityClearPendingDrinkItem();
         if (this.lookForChestCooldown > 0) this.lookForChestCooldown--;

@@ -82,7 +82,8 @@ public class NearestAttackableTargetGoalWithHumanLimiter<T extends LivingEntity>
                     return false;
                 }
 
-                if (isLookingAtTarget(human, target)) {
+                if (isLookingAtTarget(human, target)
+                        || (human.isInvestigatingSound() && human.hasLineOfSight(target))) {
                     human.isAlert = true;
                     var otherHumansOnTeam = human.level().getEntities(human, human.getBoundingBox().inflate(25), entity -> entity instanceof Human otherHuman && otherHuman.team.equals(human.team));
                     for (Entity otherHuman : otherHumansOnTeam) {

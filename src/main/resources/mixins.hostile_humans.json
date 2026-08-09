@@ -14,8 +14,7 @@
     "ThrownTridentMix",
     "WalkNodeMix",
     "WorldGenRegionMix",
-    "BlockMixin",
-    "DoorMixin"
+    "BlockMixin"
   ],
   "client": [
     "StructureBlockRenderMix"

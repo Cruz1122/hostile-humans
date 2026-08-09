@@ -57,12 +57,9 @@ public class InvestigateSoundGoal extends Goal {
 	 * Execute a one shot task or start executing a continuous task
 	 */
 	public void start() {
-		if (this.mob instanceof Human investigator) {
-			this.pos = investigator.investigateSound();
-			if (this.mob.level().getBlockState(pos).isAir()) {
-				this.pos = pos.below();
-			}
-		}
+        if (this.mob instanceof Human investigator) {
+            this.pos = investigator.investigateSound();
+        }
 		this.hasInvestigated = false;
 		this.searchTicksRemaining = reducedTickDelay(60);
 	}

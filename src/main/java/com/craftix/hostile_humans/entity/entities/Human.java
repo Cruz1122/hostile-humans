@@ -1133,7 +1133,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     }
 
     private void tryUsePreAttackBuff() {
-        if (!queuedPreAttackBuff || !(getTarget() instanceof Player) || isUsingItem() || !HumanUtil.isMeleeWeapon(getMainHandItem())) {
+        if (!queuedPreAttackBuff || !(getTarget() instanceof Player) || isUsingItem() || !MeleeWeaponSelector.isPrimary(getMainHandItem())) {
             return;
         }
 

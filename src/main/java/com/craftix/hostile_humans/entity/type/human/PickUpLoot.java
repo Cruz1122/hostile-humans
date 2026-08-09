@@ -45,7 +45,6 @@ public class PickUpLoot extends HumanAbility {
                         if (itemEntity.isRemoved()) continue;
                         if (itemEntity.isAlive() && humanEntity.isAlive() && !humanEntity.isDeadOrDying() && humanMobData.storeInventoryItem(itemEntity.getItem())) {
                             ItemStack itemstack = itemEntity.getItem();
-                            humanEntity.take(itemEntity, itemstack.getCount());
                             if (itemstack.isEmpty()) {
                                 itemEntity.discard();
                             } else {

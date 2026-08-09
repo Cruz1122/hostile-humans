@@ -86,6 +86,20 @@ public final class HumanEquipmentGameTest {
         });
     }
 
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalEquipment", timeoutTicks = 80)
+    public static void partialPickupLeavesWorldRemainder(GameTestHelper helper) {
+        Human human = createHuman(helper, new BlockPos(2, 1, 2));
+        human.getData().setInventoryItem(20, new ItemStack(Items.COBWEB, 60));
+        for (int slot = 21; slot < 30; slot++) {
+            human.getData().setInventoryItem(slot, new ItemStack(Items.STONE));
+        }
+        ItemStack incoming = new ItemStack(Items.COBWEB, 8);
+        helper.assertTrue(human.getData().storeInventoryItem(incoming), "Partial stack was not accepted");
+        helper.assertTrue(human.getData().getInventoryItem(20).getCount() == 64, "Existing stack did not fill to its limit");
+        helper.assertTrue(incoming.getCount() == 4, "Unaccepted item remainder was not preserved");
+        helper.succeed();
+    }
+
     private static Human createHuman(GameTestHelper helper, BlockPos localPos) {
         for (int x = 0; x <= 5; x++) {
             for (int z = 0; z <= 5; z++) {

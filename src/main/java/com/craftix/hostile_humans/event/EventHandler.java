@@ -68,6 +68,7 @@ public class EventHandler {
     private void validateEquipmentTags() {
         validateTag(MeleeWeaponSelector.PRIMARY_MELEE_WEAPONS, "primary melee weapons");
         validateTag(MeleeWeaponSelector.FALLBACK_MELEE_TOOLS, "fallback melee tools");
+        validateTag(MeleeWeaponSelector.NEVER_USE_AS_MELEE_WEAPON, "never-use melee weapons");
     }
 
     private void validateTag(net.minecraft.tags.TagKey<Item> tag, String name) {
@@ -141,4 +142,3 @@ public class EventHandler {
         }
     }
 }
-

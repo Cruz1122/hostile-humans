@@ -24,11 +24,13 @@ public final class PlaceCobwebAction {
 
     public static boolean tryPlace(Human human) {
         if (human.level().isClientSide || !Config.enableCobwebPlacement.get()
-                || !ForgeEventFactory.getMobGriefingEvent(human.level(), human)
                 || !human.isFleeing || human.getTarget() != null
                 || human.toAvoid == null || !human.toAvoid.isAlive()
                 || human.cobwebCooldown > 0
                 || human.cobwebsPlacedThisCombat >= Config.maxCobwebsPerCombat.get()) {
+            return false;
+        }
+        if (!ForgeEventFactory.getMobGriefingEvent(human.level(), human)) {
             return false;
         }
         LivingEntity threat = human.toAvoid;

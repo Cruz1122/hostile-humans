@@ -72,6 +72,10 @@ public final class HumanCobwebGameTest {
     public static void rejectsSelfIntersectingCandidate(GameTestHelper helper) {
         Setup setup = setup(helper, true, true);
         helper.getLevel().setBlock(setup.candidate(), Blocks.STONE.defaultBlockState(), 3);
+        helper.getLevel().setBlock(setup.candidate().north(), Blocks.STONE.defaultBlockState(), 3);
+        helper.getLevel().setBlock(setup.candidate().south(), Blocks.STONE.defaultBlockState(), 3);
+        helper.getLevel().setBlock(setup.candidate().east(), Blocks.STONE.defaultBlockState(), 3);
+        helper.getLevel().setBlock(setup.candidate().west(), Blocks.STONE.defaultBlockState(), 3);
         helper.assertTrue(!PlaceCobwebAction.tryPlace(setup.human), "Placement succeeded at an occupied candidate");
         helper.assertTrue(!setup.hasCobwebNearHuman(), "Invalid candidate was modified");
         helper.succeed();

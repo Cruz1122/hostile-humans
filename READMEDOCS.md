@@ -10,12 +10,16 @@ item tag. Pickaxes, shovels and hoes are available only through
 primary item. The `hostile_humans:never_use_as_melee_weapon` tag can veto an item.
 Modpacks can extend these tags with a datapack without changing Java code.
 
-The score within a category combines effective main-hand attack damage,
+The score within a category combines material quality, effective main-hand attack damage,
 applicable offensive enchantment damage, remaining durability and a near-break
 penalty. Category always dominates the score. Ties keep the current item, then
 use inventory slot and registry ID as stable tie-breakers. Selection is not
 performed every tick: it is marked dirty after pickup, loadout generation,
 loading, combat transitions and weapon breakage.
+
+Humans continue to receive audible game-event alerts, including visible player
+movement, but use a custom listener so vanilla vibration particles are not
+rendered for the listener.
 
 Server interaction settings are written to `hostile_humans-server.toml`:
 
@@ -38,10 +42,48 @@ stack item only after success, respects Forge placement cancellation and
 
 Manual scenarios:
 
+- `function hostile_humans:debug/all_tactical_equipment` creates one arena with
+  all four stations below. It is the recommended manual smoke test.
 - `function hostile_humans:debug/weapon_primary`
 - `function hostile_humans:debug/weapon_fallback`
 - `function hostile_humans:debug/weapon_upgrade`
 - `function hostile_humans:debug/cobweb_retreat`
+
+### Complete manual smoke test
+
+Run the following command as a creative operator in a test world:
+
+```text
+/function hostile_humans:debug/all_tactical_equipment
+```
+
+The arena uses four labeled, glowing humans in separate glass chambers:
+
+1. `HH_PRIMARY` must keep the iron sword instead of the nearby iron pickaxe.
+2. `HH_FALLBACK` must collect and equip the iron pickaxe.
+3. `HH_UPGRADE` must replace the iron pickaxe with the diamond sword after pickup.
+4. `HH_COBWEB` starts at low health. Attack it inside its chamber so it enters
+   retreat, then it must collect cobwebs, place webs only while retreating,
+   consume one item per successful placement, respect the cooldown and stop at
+   the combat quota.
+
+The scenario disables natural mob spawning and enables `mobGriefing`. Re-running
+the same function removes only entities tagged `hh_full_debug`, clears the
+previously placed blocks and rebuilds all four chambers. Use these positions to
+test stations individually: `X=-18` (primary), `X=-12` (fallback), `X=-6`
+(upgrade), and `X=0` (cobweb). For the cobweb station, attack the low-health
+human inside its chamber and observe the entity with the `HH_COBWEB` name and glowing effect. The three
+single-purpose functions remain available when an isolated reproduction is
+needed.
+
+Nearby item pickup is checked twice per second, and cobweb placement tries
+several safe positions behind the retreating human when the ideal position is
+blocked.
+
+Flee selection is intentionally probabilistic in normal gameplay. For a
+deterministic manual cobweb test, set `run_away_middle_fight_chance = 1.0` in
+`config/hostile_humans-common.toml` and restart the server before running the
+scenario. This does not change the server tactical-equipment settings.
 
 GameTests are grouped in `tacticalEquipment` and `tacticalCobweb` batches and
 cover primary-over-fallback selection, fallback use, pickup upgrade, invalid

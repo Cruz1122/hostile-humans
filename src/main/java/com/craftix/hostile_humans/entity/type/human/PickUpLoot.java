@@ -18,7 +18,7 @@ import java.util.List;
 @EventBusSubscriber
 public class PickUpLoot extends HumanAbility {
 
-    private static final short TICK_RATE = 20 * 3;
+    private static final short TICK_RATE = 30; // 1.5 seconds
     private static int radius = 2;
 
     public PickUpLoot(HumanEntity humanEntity, Level level) {

@@ -79,6 +79,10 @@ public final class HumanSoundGameTest {
         prepareFlatArena(helper);
         Human human = loadHuman(helper, new BlockPos(12, 1, 12), "HH_SOUND_STEP");
         BlockPos stepPos = helper.absolutePos(new BlockPos(12, 1, 3));
+        for (int z = 6; z <= 8; z++) {
+            helper.setBlock(new BlockPos(12, 1, z), Blocks.STONE.defaultBlockState());
+            helper.setBlock(new BlockPos(12, 2, z), Blocks.STONE.defaultBlockState());
+        }
         FakePlayer player = addFakePlayer(helper, new BlockPos(12, 1, 3), GameType.CREATIVE, "hh-audible-step");
 
         helper.startSequence()
@@ -106,6 +110,10 @@ public final class HumanSoundGameTest {
         prepareFlatArena(helper);
         Human human = loadHuman(helper, new BlockPos(12, 1, 12), "HH_SOUND_SNEAK");
         BlockPos stepPos = helper.absolutePos(new BlockPos(12, 1, 3));
+        for (int z = 6; z <= 8; z++) {
+            helper.setBlock(new BlockPos(12, 1, z), Blocks.STONE.defaultBlockState());
+            helper.setBlock(new BlockPos(12, 2, z), Blocks.STONE.defaultBlockState());
+        }
         FakePlayer player = addFakePlayer(helper, new BlockPos(12, 1, 3), GameType.CREATIVE, "hh-silent-step");
         player.setShiftKeyDown(true);
 
@@ -119,6 +127,32 @@ public final class HumanSoundGameTest {
                     if (!BlockPos.ZERO.equals(rememberedSound)) {
                         helper.fail("sneaking player step should be silent; step=" + stepPos
                                 + ", remembered=" + rememberedSound);
+                    } else {
+                        helper.succeed();
+                    }
+                });
+    }
+
+    @GameTest(
+            template = TEMPLATE,
+            templateNamespace = "hostile_humans",
+            batch = "soundVisual",
+            timeoutTicks = 80)
+    public static void humanStillReceivesVisiblePlayerStep(GameTestHelper helper) {
+        prepareFlatArena(helper);
+        Human human = loadHuman(helper, new BlockPos(12, 1, 12), "HH_SOUND_VISIBLE");
+        BlockPos stepPos = helper.absolutePos(new BlockPos(12, 1, 3));
+        FakePlayer player = addFakePlayer(helper, new BlockPos(12, 1, 3), GameType.CREATIVE, "hh-visible-step");
+
+        helper.startSequence()
+                .thenIdle(10)
+                .thenExecute(() -> helper.getLevel().gameEvent(player, GameEvent.STEP, stepPos))
+                .thenIdle(20)
+                .thenExecute(() -> {
+                    BlockPos rememberedSound = human.investigateSound();
+                    player.discard();
+                    if (rememberedSound.distSqr(stepPos) > 2D) {
+                        helper.fail("visible player movement was not received: " + rememberedSound);
                     } else {
                         helper.succeed();
                     }

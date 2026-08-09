@@ -12,6 +12,7 @@ import net.minecraft.world.entity.ai.attributes.Attribute;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.TieredItem;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.level.Level;
 import com.google.common.collect.Multimap;
@@ -87,12 +88,20 @@ public final class MeleeWeaponSelector {
     private static double score(ItemStack stack, MobType targetType, boolean primary) {
         double category = primary ? 1_000_000D : 100_000D;
         double damage = effectiveAttackDamage(stack);
+        double materialQuality = materialQuality(stack);
         double enchantment = EnchantmentHelper.getDamageBonus(stack, targetType);
         double durability = stack.getMaxDamage() == 0
                 ? 1D
                 : (double) (stack.getMaxDamage() - stack.getDamageValue()) / stack.getMaxDamage();
         double nearBreakPenalty = durability < 0.10D ? 250D : 0D;
-        return category + damage * 100D + enchantment * 10D + durability * 5D - nearBreakPenalty;
+        return category + materialQuality * 1_000D + damage * 100D
+                + enchantment * 10D + durability * 5D - nearBreakPenalty;
+    }
+
+    private static double materialQuality(ItemStack stack) {
+        return stack.getItem() instanceof TieredItem tieredItem
+                ? tieredItem.getTier().getLevel()
+                : 0D;
     }
 
     private static double effectiveAttackDamage(ItemStack stack) {

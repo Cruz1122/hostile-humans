@@ -17,6 +17,9 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.common.util.BlockSnapshot;
 import net.minecraftforge.event.ForgeEventFactory;
 
+import java.util.LinkedHashSet;
+import java.util.Set;
+
 /** Small, server-side retreat action; deliberately not a general block builder. */
 public final class PlaceCobwebAction {
     private PlaceCobwebAction() {
@@ -43,11 +46,43 @@ public final class PlaceCobwebAction {
             return false;
         }
 
-        BlockPos candidate = candidateFor(human);
-        if (candidate == null) {
+        if (candidateFor(human) == null) {
             return false;
         }
-        return tryPlaceAt(human, threat, cobwebs, candidate);
+        Set<BlockPos> candidates = candidatePositions(human);
+        if (candidates.isEmpty()) {
+            return false;
+        }
+        for (BlockPos candidate : candidates) {
+            if (tryPlaceAt(human, threat, cobwebs, candidate)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static Set<BlockPos> candidatePositions(Human human) {
+        Set<BlockPos> candidates = new LinkedHashSet<>();
+        if (human.toAvoid == null) {
+            return candidates;
+        }
+        Vec3 away = human.position().subtract(human.toAvoid.position());
+        if (away.lengthSqr() < 0.01D) {
+            return candidates;
+        }
+        away = away.normalize();
+        Vec3 side = new Vec3(-away.z, 0.0D, away.x);
+        for (double distance : new double[]{1.5D, 2.2D}) {
+            candidates.add(BlockPos.containing(
+                    human.getX() + away.x * distance, human.getY(), human.getZ() + away.z * distance));
+        }
+        for (double offset : new double[]{-0.8D, 0.8D}) {
+            candidates.add(BlockPos.containing(
+                    human.getX() + away.x * 1.5D + side.x * offset,
+                    human.getY(),
+                    human.getZ() + away.z * 1.5D + side.z * offset));
+        }
+        return candidates;
     }
 
     public static BlockPos candidateFor(Human human) {

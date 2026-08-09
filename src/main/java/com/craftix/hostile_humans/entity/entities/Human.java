@@ -60,6 +60,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.gameevent.DynamicGameEventListener;
 import net.minecraft.world.level.gameevent.EntityPositionSource;
 import net.minecraft.world.level.gameevent.GameEvent;
+import net.minecraft.world.level.gameevent.GameEventListener;
 import net.minecraft.world.level.gameevent.PositionSource;
 import net.minecraft.world.level.gameevent.vibrations.VibrationSystem;
 import net.minecraft.world.level.pathfinder.BlockPathTypes;
@@ -80,7 +81,7 @@ import static com.craftix.hostile_humans.HumanUtil.*;
 import static com.craftix.hostile_humans.entity.entities.HumanInventoryGenerator.generateInventory;
 import static com.craftix.hostile_humans.entity.entities.ModEntityType.ROAMER;
 
-public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttackMob, PotionRangedAttackMob, VibrationSystem {
+public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttackMob, PotionRangedAttackMob {
 
     public static final ItemStack[] EXTRA_EDIBLE_ITEMS = new ItemStack[]{Items.GOLDEN_APPLE.getDefaultInstance(), PotionUtils.setPotion(Items.POTION.getDefaultInstance(), Potions.REGENERATION), PotionUtils.setPotion(Items.POTION.getDefaultInstance(), Potions.HEALING)};
     public static final ItemStack[] PRE_ATTACK_BUFF_ITEMS = new ItemStack[]{
@@ -137,9 +138,8 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     // Investigate Sound
     private static final int SOUND_LISTENER_RANGE = 16;
     public BlockPos investigateSound = BlockPos.ZERO;
-    private final DynamicGameEventListener<VibrationSystem.Listener> dynamicGameEventListener;
+    private final DynamicGameEventListener<GameEventListener> dynamicGameEventListener;
     private final VibrationSystem.User vibrationUser;
-    private final VibrationSystem.Data vibrationData;
 
     public BlockPos investigateSound() {
 		return investigateSound;
@@ -158,17 +158,6 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 		this.investigateSound = investigateSound.offset(this.random.nextInt(-1, 2), 0, this.random.nextInt(-1, 2));
 	}
 
-    @Override
-    public VibrationSystem.Data getVibrationData() {
-        return this.vibrationData;
-    }
-
-    @Override
-    public VibrationSystem.User getVibrationUser() {
-        return this.vibrationUser;
-    }
-
-    @Override
     public void updateDynamicGameEventListener(
             BiConsumer<DynamicGameEventListener<?>, ServerLevel> listenerConsumer) {
         if (this.level() instanceof ServerLevel serverLevel) {
@@ -225,6 +214,9 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
                     || !level.getWorldBorder().isWithinBounds(sourcePos)) {
                 return false;
             }
+            if (event == null || !event.is(net.minecraft.tags.GameEventTags.VIBRATIONS)) {
+                return false;
+            }
 
             Entity sourceEntity = context.sourceEntity();
             if (sourceEntity instanceof Human) {
@@ -234,6 +226,9 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
                 return false;
             }
             if (isPlayerMovementEvent(event) && !(sourceEntity instanceof Player)) {
+                return false;
+            }
+            if (event == GameEvent.STEP && sourceEntity instanceof Player player && player.isShiftKeyDown()) {
                 return false;
             }
             return !isHandledByExistingStimulusHook(event, sourceEntity);
@@ -250,6 +245,31 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             if (Human.this.getTarget() == null) {
                 Human.this.setInvestigateSound(sourcePos);
             }
+        }
+    }
+
+    /** Receives game events without using vanilla vibration rendering. */
+    private final class HumanGameEventListener implements GameEventListener {
+        @Override
+        public PositionSource getListenerSource() {
+            return new EntityPositionSource(Human.this, Human.this.getEyeHeight());
+        }
+
+        @Override
+        public int getListenerRadius() {
+            return SOUND_LISTENER_RANGE;
+        }
+
+        @Override
+        public boolean handleGameEvent(ServerLevel level, GameEvent event, GameEvent.Context context, Vec3 sourcePos) {
+            Entity sourceEntity = context.sourceEntity();
+            if (!vibrationUser.canReceiveVibration(level, BlockPos.containing(sourcePos), event, context)) {
+                return false;
+            }
+            vibrationUser.onReceiveVibration(level, BlockPos.containing(sourcePos), event,
+                    sourceEntity, null,
+                    (float) Math.sqrt(Human.this.distanceToSqr(sourcePos)));
+            return true;
         }
     }
 
@@ -279,8 +299,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     public Human(EntityType<? extends HumanEntity> entityType, Level level, HumanTier type) {
         super(entityType, level);
         this.vibrationUser = new HumanVibrationUser();
-        this.vibrationData = new VibrationSystem.Data();
-        this.dynamicGameEventListener = new DynamicGameEventListener<>(new VibrationSystem.Listener(this));
+        this.dynamicGameEventListener = new DynamicGameEventListener<>(new HumanGameEventListener());
         this.setPathfindingMalus(BlockPathTypes.WATER, 0.0F);
         this.setCanPickUpLoot(true);
 //        this.setCustomName(null);
@@ -895,9 +914,6 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     @Override
     public void tick() {
-        if (this.level() instanceof ServerLevel serverLevel) {
-            VibrationSystem.Ticker.tick(serverLevel, this.vibrationData, this.vibrationUser);
-        }
         super.tick();
         sanityClearPendingDrinkItem();
         if (this.lookForChestCooldown > 0) this.lookForChestCooldown--;

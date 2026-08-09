@@ -61,6 +61,17 @@ public final class HumanEquipmentGameTest {
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalEquipment", timeoutTicks = 80)
+    public static void sameToolQualityPrefersDiamond(GameTestHelper helper) {
+        Human human = createHuman(helper, new BlockPos(2, 1, 2));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        human.getData().setInventoryItem(0, new ItemStack(Items.DIAMOND_PICKAXE));
+        human.reevaluateEquipment();
+        helper.assertTrue(human.getMainHandItem().is(Items.DIAMOND_PICKAXE),
+                "Higher-quality pickaxe did not replace the iron pickaxe");
+        helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalEquipment", timeoutTicks = 80)
     public static void invalidItemsRemainUnequipped(GameTestHelper helper) {
         Human human = createHuman(helper, new BlockPos(2, 1, 2));
         human.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);

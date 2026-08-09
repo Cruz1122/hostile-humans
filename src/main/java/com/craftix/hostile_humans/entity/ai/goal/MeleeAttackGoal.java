@@ -92,7 +92,7 @@ public class MeleeAttackGoal extends HumanGoal {
             return false;
         } else if (!this.followingTargetEvenIfNotSeen) {
             return !this.mob.getNavigation().isDone();
-        } else return this.mob.isWithinRestriction(livingEntity.blockPosition());
+        } else return true;
     }
 
     @Override

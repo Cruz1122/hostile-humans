@@ -138,6 +138,14 @@ public class HumanEntity extends HumanMobEntityData {
         if (!this.hasCustomName()) {
 //            this.setCustomName(this.getCustomHumanMobNameComponent());
         }
+
+        if (!this.level().isClientSide && this.getData() == null) {
+            HumanServerData serverData = HumanServerData.get();
+            if (serverData != null) {
+                serverData.registerHumanMob(this);
+            }
+        }
+
         registerData();
     }
 

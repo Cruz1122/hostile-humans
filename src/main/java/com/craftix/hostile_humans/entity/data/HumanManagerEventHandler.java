@@ -119,7 +119,7 @@ public class HumanManagerEventHandler {
     }
 
     private static void updateOrRegisterHumanMob(Entity entity) {
-        if (entity instanceof HumanEntity humanEntity && !humanEntity.level().isClientSide && humanEntity.hasOwner()) {
+        if (entity instanceof HumanEntity humanEntity && !humanEntity.level().isClientSide) {
 
             HumanServerData.get().updateOrRegisterHumanMob(humanEntity);
         }

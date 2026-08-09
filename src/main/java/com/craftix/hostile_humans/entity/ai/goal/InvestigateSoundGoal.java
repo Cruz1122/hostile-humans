@@ -17,6 +17,7 @@ public class InvestigateSoundGoal extends Goal {
 	@Nullable
 	protected BlockPos pos = BlockPos.ZERO;
 	private int calmDown;
+	private int searchTicksRemaining;
 	private boolean isRunning;
 
 	public InvestigateSoundGoal(Mob pMob, double pSpeedModifier) {
@@ -36,7 +37,7 @@ public class InvestigateSoundGoal extends Goal {
 			--this.calmDown;
 			return false;
 		} else {
-			if (this.mob instanceof Human investigator) {
+			if (this.pos == BlockPos.ZERO && this.mob instanceof Human investigator) {
 				this.pos = investigator.investigateSound();
 			}
 			if (this.pos == BlockPos.ZERO) return false;
@@ -48,11 +49,8 @@ public class InvestigateSoundGoal extends Goal {
 	 * Returns whether an in-progress EntityAIBase should continue executing
 	 */
 	public boolean canContinueToUse() {
-		if (this.mob.blockPosition().distSqr(this.pos) < 5D && this.hasInvestigated) {
-			return false;
-		}
-
-		return this.canUse();
+		if (this.mob.isSleeping() || this.mob.getTarget() != null) return false;
+		return !this.hasInvestigated || this.searchTicksRemaining > 0;
 	}
 
 	/**
@@ -66,6 +64,7 @@ public class InvestigateSoundGoal extends Goal {
 			}
 		}
 		this.hasInvestigated = false;
+		this.searchTicksRemaining = reducedTickDelay(60);
 	}
 
 	/**
@@ -77,7 +76,9 @@ public class InvestigateSoundGoal extends Goal {
 			investigator.setInvestigateSound(BlockPos.ZERO);;
 		}
 		this.mob.getNavigation().stop();
-		this.calmDown = reducedTickDelay(100);
+		if (this.hasInvestigated) {
+			this.calmDown = reducedTickDelay(100);
+		}
 		this.isRunning = false;
 	}
 
@@ -88,8 +89,13 @@ public class InvestigateSoundGoal extends Goal {
 		if (this.mob.blockPosition().distSqr(this.pos) < 5D) {
 			this.mob.getNavigation().stop();
 			this.hasInvestigated = true;
+			if (--this.searchTicksRemaining <= 0 && this.mob instanceof Human investigator) {
+				investigator.setInvestigateSound(BlockPos.ZERO);
+			}
 		} else {
-			this.mob.getNavigation().moveTo(this.pos.getX(), this.pos.getY(), this.pos.getZ(), this.speedModifier);
+			if (this.mob.tickCount % 10 == 0 || this.mob.getNavigation().isDone()) {
+				this.mob.getNavigation().moveTo(this.pos.getX(), this.pos.getY(), this.pos.getZ(), this.speedModifier);
+			}
 		}
 	}
 

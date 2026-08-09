@@ -6,6 +6,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
 
@@ -44,6 +45,41 @@ public final class HumanSmokeGameTest {
                         helper.fail("human_tier1 is not alive after 30 ticks");
                     } else if (human.isRemoved()) {
                         helper.fail("human_tier1 was removed during the smoke test");
+                    } else {
+                        helper.succeed();
+                    }
+                });
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", timeoutTicks = 140)
+    public static void humanInvestigatesSoundPosition(GameTestHelper helper) {
+        Human human = ModEntityType.HUMAN1.get().create(helper.getLevel());
+        if (human == null) {
+            helper.fail("hostile_humans:human_tier1 could not be created for sound investigation");
+            return;
+        }
+
+        BlockPos spawnPos = helper.absolutePos(new BlockPos(2, 1, 2));
+        BlockPos stimulusPos = helper.absolutePos(new BlockPos(6, 1, 2));
+        for (int x = 0; x <= 7; x++) {
+            for (int z = 0; z <= 4; z++) {
+                helper.setBlock(new BlockPos(x, 0, z), Blocks.STONE.defaultBlockState());
+            }
+        }
+        human.moveTo(spawnPos, 0.0F, 0.0F);
+        human.addTag(DEBUG_TAG);
+        human.setInvestigateSound(stimulusPos);
+        if (!helper.getLevel().addFreshEntity(human)) {
+            helper.fail("human_tier1 was not added for sound investigation");
+            return;
+        }
+
+        helper.startSequence()
+                .thenIdle(120)
+                .thenExecute(() -> {
+                    if (human.blockPosition().distSqr(human.investigateSound()) > 9D) {
+                        helper.fail("human_tier1 did not approach sound within 120 ticks; current="
+                                + human.blockPosition() + ", sound=" + human.investigateSound());
                     } else {
                         helper.succeed();
                     }

@@ -126,8 +126,14 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 		return investigateSound;
 	}
     public void setInvestigateSound(BlockPos investigateSound) {
-		this.investigateSound = investigateSound;
+		if (investigateSound == null || investigateSound == BlockPos.ZERO) {
+			this.investigateSound = BlockPos.ZERO;
+			return;
+		}
+
+		this.investigateSound = investigateSound.offset(this.random.nextInt(-1, 2), 0, this.random.nextInt(-1, 2));
 	}
+
     // Chest
     public int lookForChestCooldown;
     // Food
@@ -416,8 +422,20 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     }
 
     @Override
+    public void addAdditionalSaveData(CompoundTag compound) {
+        super.addAdditionalSaveData(compound);
+        compound.putInt("InvestigateSoundX", this.investigateSound.getX());
+        compound.putInt("InvestigateSoundY", this.investigateSound.getY());
+        compound.putInt("InvestigateSoundZ", this.investigateSound.getZ());
+    }
+
+    @Override
     public void readAdditionalSaveData(CompoundTag compound) {
         super.readAdditionalSaveData(compound);
+        this.investigateSound = new BlockPos(
+                compound.getInt("InvestigateSoundX"),
+                compound.getInt("InvestigateSoundY"),
+                compound.getInt("InvestigateSoundZ"));
         setCombatTask();
     }
 
@@ -1413,4 +1431,3 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     }
 
 }
-

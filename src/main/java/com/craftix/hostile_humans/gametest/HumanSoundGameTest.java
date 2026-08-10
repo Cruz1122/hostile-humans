@@ -27,7 +27,7 @@ import java.util.UUID;
 @GameTestHolder("hostile_humans")
 @PrefixGameTestTemplate(false)
 public final class HumanSoundGameTest {
-    private static final String TEMPLATE = "human_smoke";
+    private static final String TEMPLATE = "warehouse";
     private static final String DEBUG_TAG = "hh_debug";
 
     private HumanSoundGameTest() {
@@ -40,13 +40,13 @@ public final class HumanSoundGameTest {
             timeoutTicks = 100)
     public static void humanAcquiresVisiblePlayerWhileInvestigating(GameTestHelper helper) {
         prepareFlatArena(helper);
-        Human human = loadHuman(helper, new BlockPos(12, 1, 12), "HH_SOUND_TARGET");
-        BlockPos soundPos = helper.absolutePos(new BlockPos(12, 1, 1));
+        Human human = loadHuman(helper, new BlockPos(14, 1, 11), "HH_SOUND_TARGET");
+        BlockPos soundPos = helper.absolutePos(new BlockPos(14, 1, 5));
         human.setInvestigateSound(soundPos);
         double startingDistance = human.blockPosition().distSqr(soundPos);
 
         FakePlayer player = createFakePlayer(
-                helper, new BlockPos(19, 1, 12), GameType.SURVIVAL, "hh-visible-target");
+                helper, new BlockPos(17, 1, 11), GameType.SURVIVAL, "hh-visible-target");
 
         helper.startSequence()
                 .thenIdle(15)
@@ -77,19 +77,19 @@ public final class HumanSoundGameTest {
             timeoutTicks = 80)
     public static void humanHearsNonSneakingPlayerStep(GameTestHelper helper) {
         prepareFlatArena(helper);
-        Human human = loadHuman(helper, new BlockPos(12, 1, 12), "HH_SOUND_STEP");
-        BlockPos stepPos = helper.absolutePos(new BlockPos(12, 1, 3));
-        for (int z = 6; z <= 8; z++) {
-            helper.setBlock(new BlockPos(12, 1, z), Blocks.STONE.defaultBlockState());
-            helper.setBlock(new BlockPos(12, 2, z), Blocks.STONE.defaultBlockState());
+        Human human = loadHuman(helper, new BlockPos(14, 1, 11), "HH_SOUND_STEP");
+        BlockPos stepPos = helper.absolutePos(new BlockPos(14, 1, 5));
+        for (int z = 7; z <= 9; z++) {
+            helper.setBlock(new BlockPos(14, 1, z), Blocks.STONE.defaultBlockState());
+            helper.setBlock(new BlockPos(14, 2, z), Blocks.STONE.defaultBlockState());
         }
-        FakePlayer player = addFakePlayer(helper, new BlockPos(12, 1, 3), GameType.CREATIVE, "hh-audible-step");
+        FakePlayer player = addFakePlayer(helper, new BlockPos(14, 1, 5), GameType.CREATIVE, "hh-audible-step");
 
         helper.startSequence()
                 .thenIdle(10)
-                .thenExecute(() -> helper.getLevel().gameEvent(player, GameEvent.STEP, stepPos))
-                .thenIdle(20)
                 .thenExecute(() -> {
+                    human.setInvestigateSound(BlockPos.ZERO);
+                    helper.getLevel().gameEvent(player, GameEvent.STEP, stepPos);
                     BlockPos rememberedSound = human.investigateSound();
                     player.discard();
                     if (rememberedSound.distSqr(stepPos) > 2D) {
@@ -108,20 +108,20 @@ public final class HumanSoundGameTest {
             timeoutTicks = 80)
     public static void humanIgnoresSneakingPlayerStep(GameTestHelper helper) {
         prepareFlatArena(helper);
-        Human human = loadHuman(helper, new BlockPos(12, 1, 12), "HH_SOUND_SNEAK");
-        BlockPos stepPos = helper.absolutePos(new BlockPos(12, 1, 3));
-        for (int z = 6; z <= 8; z++) {
-            helper.setBlock(new BlockPos(12, 1, z), Blocks.STONE.defaultBlockState());
-            helper.setBlock(new BlockPos(12, 2, z), Blocks.STONE.defaultBlockState());
+        Human human = loadHuman(helper, new BlockPos(14, 1, 11), "HH_SOUND_SNEAK");
+        BlockPos stepPos = helper.absolutePos(new BlockPos(14, 1, 5));
+        for (int z = 7; z <= 9; z++) {
+            helper.setBlock(new BlockPos(14, 1, z), Blocks.STONE.defaultBlockState());
+            helper.setBlock(new BlockPos(14, 2, z), Blocks.STONE.defaultBlockState());
         }
-        FakePlayer player = addFakePlayer(helper, new BlockPos(12, 1, 3), GameType.CREATIVE, "hh-silent-step");
+        FakePlayer player = addFakePlayer(helper, new BlockPos(14, 1, 5), GameType.CREATIVE, "hh-silent-step");
         player.setShiftKeyDown(true);
 
         helper.startSequence()
                 .thenIdle(10)
-                .thenExecute(() -> helper.getLevel().gameEvent(player, GameEvent.STEP, stepPos))
-                .thenIdle(20)
                 .thenExecute(() -> {
+                    human.setInvestigateSound(BlockPos.ZERO);
+                    helper.getLevel().gameEvent(player, GameEvent.STEP, stepPos);
                     BlockPos rememberedSound = human.investigateSound();
                     player.discard();
                     if (!BlockPos.ZERO.equals(rememberedSound)) {
@@ -140,15 +140,15 @@ public final class HumanSoundGameTest {
             timeoutTicks = 80)
     public static void humanStillReceivesVisiblePlayerStep(GameTestHelper helper) {
         prepareFlatArena(helper);
-        Human human = loadHuman(helper, new BlockPos(12, 1, 12), "HH_SOUND_VISIBLE");
-        BlockPos stepPos = helper.absolutePos(new BlockPos(12, 1, 3));
-        FakePlayer player = addFakePlayer(helper, new BlockPos(12, 1, 3), GameType.CREATIVE, "hh-visible-step");
+        Human human = loadHuman(helper, new BlockPos(14, 1, 11), "HH_SOUND_VISIBLE");
+        BlockPos stepPos = helper.absolutePos(new BlockPos(14, 1, 5));
+        FakePlayer player = addFakePlayer(helper, new BlockPos(14, 1, 5), GameType.CREATIVE, "hh-visible-step");
 
         helper.startSequence()
                 .thenIdle(10)
-                .thenExecute(() -> helper.getLevel().gameEvent(player, GameEvent.STEP, stepPos))
-                .thenIdle(20)
                 .thenExecute(() -> {
+                    human.setInvestigateSound(BlockPos.ZERO);
+                    helper.getLevel().gameEvent(player, GameEvent.STEP, stepPos);
                     BlockPos rememberedSound = human.investigateSound();
                     player.discard();
                     if (rememberedSound.distSqr(stepPos) > 2D) {
@@ -166,8 +166,8 @@ public final class HumanSoundGameTest {
             timeoutTicks = 80)
     public static void humanHearsDoorOpenedByCreativePlayer(GameTestHelper helper) {
         prepareFlatArena(helper);
-        Human human = loadHuman(helper, new BlockPos(12, 1, 12), "HH_SOUND_DOOR");
-        BlockPos localDoorPos = new BlockPos(12, 1, 4);
+        Human human = loadHuman(helper, new BlockPos(14, 1, 11), "HH_SOUND_DOOR");
+        BlockPos localDoorPos = new BlockPos(14, 1, 7);
         BlockPos doorPos = helper.absolutePos(localDoorPos);
         helper.setBlock(localDoorPos, Blocks.OAK_DOOR.defaultBlockState()
                 .setValue(DoorBlock.FACING, Direction.NORTH)
@@ -175,25 +175,22 @@ public final class HumanSoundGameTest {
         helper.setBlock(localDoorPos.above(), Blocks.OAK_DOOR.defaultBlockState()
                 .setValue(DoorBlock.FACING, Direction.NORTH)
                 .setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER));
-        FakePlayer player = addFakePlayer(helper, new BlockPos(12, 1, 3), GameType.CREATIVE, "hh-door-open");
+        FakePlayer player = addFakePlayer(helper, new BlockPos(14, 1, 6), GameType.CREATIVE, "hh-door-open");
 
         helper.startSequence()
                 .thenIdle(10)
                 .thenExecute(() -> {
+                    human.setInvestigateSound(BlockPos.ZERO);
                     BlockHitResult hitResult = new BlockHitResult(
                             Vec3.atCenterOf(doorPos), Direction.NORTH, doorPos, false);
                     InteractionResult result = helper.getLevel().getBlockState(doorPos).use(
                             helper.getLevel(), player, InteractionHand.MAIN_HAND, hitResult);
-                    if (!result.consumesAction()
-                            || !helper.getLevel().getBlockState(doorPos).getValue(DoorBlock.OPEN)) {
-                        helper.fail("creative FakePlayer did not open the oak door");
-                    }
-                })
-                .thenIdle(20)
-                .thenExecute(() -> {
+                    boolean opened = helper.getLevel().getBlockState(doorPos).getValue(DoorBlock.OPEN);
                     BlockPos rememberedSound = human.investigateSound();
                     player.discard();
-                    if (rememberedSound.distSqr(doorPos) > 2D) {
+                    if (!result.consumesAction() || !opened) {
+                        helper.fail("creative FakePlayer did not open the oak door");
+                    } else if (rememberedSound.distSqr(doorPos) > 2D) {
                         helper.fail("door opened by creative player was not heard; door=" + doorPos
                                 + ", remembered=" + rememberedSound);
                     } else {
@@ -204,10 +201,10 @@ public final class HumanSoundGameTest {
 
     private static void prepareFlatArena(GameTestHelper helper) {
         helper.killAllEntities();
-        for (int x = 0; x <= 24; x++) {
-            for (int z = 0; z <= 24; z++) {
+        for (int x = 10; x <= 18; x++) {
+            for (int z = 4; z <= 12; z++) {
                 helper.setBlock(new BlockPos(x, 0, z), Blocks.STONE.defaultBlockState());
-                for (int y = 1; y <= 4; y++) {
+                for (int y = 1; y <= 6; y++) {
                     helper.setBlock(new BlockPos(x, y, z), Blocks.AIR.defaultBlockState());
                 }
             }

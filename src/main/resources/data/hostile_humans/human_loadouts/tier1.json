@@ -8,6 +8,7 @@
   "mainhand": [
     { "item": "minecraft:iron_sword", "weight": 2 },
     { "item": "minecraft:stone_sword", "weight": 2 },
+    { "item": "minecraft:iron_axe", "weight": 1 },
     { "item": "minecraft:crossbow", "weight": 1 },
     { "item": "minecraft:bow", "weight": 1 }
   ],
@@ -23,7 +24,8 @@
   },
   "inventory": [
     { "item": "minecraft:iron_sword", "weight": 1 },
-    { "item": "minecraft:stone_sword", "weight": 1 }
+    { "item": "minecraft:stone_sword", "weight": 1 },
+    { "item": "minecraft:iron_axe", "weight": 1 }
   ],
   "bonus_mainhand": {
     "chance": 0.0,

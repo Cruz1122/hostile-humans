@@ -8,6 +8,10 @@ import com.craftix.hostile_humans.entity.PotionRangedAttackMob;
 import com.craftix.hostile_humans.entity.ai.control.HumanEntityWalkControl;
 import com.craftix.hostile_humans.entity.ai.goal.*;
 import com.craftix.hostile_humans.entity.ai.action.PlaceCobwebAction;
+import com.craftix.hostile_humans.entity.ai.combat.CombatAction;
+import com.craftix.hostile_humans.entity.ai.combat.CombatIntent;
+import com.craftix.hostile_humans.entity.ai.combat.CombatSkillTier;
+import com.craftix.hostile_humans.entity.ai.combat.CombatTacticsController;
 import com.craftix.hostile_humans.entity.equipment.MeleeWeaponSelector;
 import com.google.common.collect.Maps;
 import net.minecraft.Util;
@@ -93,8 +97,12 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     public static final ItemStack MID_FIGHT_EMERGENCY_ITEM = Items.ENCHANTED_GOLDEN_APPLE.getDefaultInstance();
 
     private static final UUID MODIFIER_UUID = UUID.fromString("7a0811af-4025-4691-ba75-2d638d4ab3f4");
+    private static final UUID CRITICAL_DAMAGE_MODIFIER_UUID = UUID.fromString("16da6c16-a8eb-49ce-99cb-24fbdf91836e");
 
     private static final AttributeModifier USE_ITEM_SPEED_PENALTY = new AttributeModifier(MODIFIER_UUID, "Use item speed penalty", -0.25D, AttributeModifier.Operation.ADDITION);
+    private static final AttributeModifier CRITICAL_DAMAGE_MODIFIER = new AttributeModifier(
+            CRITICAL_DAMAGE_MODIFIER_UUID, "Human critical attack", 0.5D,
+            AttributeModifier.Operation.MULTIPLY_TOTAL);
     private static final Map<String, ResourceLocation> TEXTURE_BY_VARIANT = Util.make(Maps.newHashMap(), hashMap -> {
         for (int i = 1; i <= 37; i++) {
             String name = "skin" + i;
@@ -107,6 +115,11 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     private final MeleeAttackGoal meleeAttackGoal = new MeleeAttackGoal(this, 1.05D, true);
     public int shieldCoolDown;
     public int shieldUpTicks;
+    public int shieldDisabledUntilTick;
+    public int lastReceivedCombatHitTick = Integer.MIN_VALUE;
+    public int consecutiveReceivedCombatHits;
+    public int criticalAttackArmedUntilTick;
+    public boolean criticalStrikeReady;
     public int ticksEyesOutOfWater;
     public int switchingWeaponCoolDown;
     public int meleeFlurryHitsRemaining;
@@ -115,6 +128,14 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     public int cobwebsPlacedThisCombat;
     private boolean equipmentDirty = true;
     private boolean evaluatingEquipment;
+    private int shieldDisablerSwapSlot = -1;
+    private int shieldDisablerRestoreDeadline;
+    @Nullable
+    private UUID shieldDisablerTarget;
+    private final CombatTacticsController combatTacticsController = new CombatTacticsController(this);
+    private CombatIntent combatIntent = CombatIntent.idle(com.craftix.hostile_humans.entity.ai.combat.ShieldState.UNAVAILABLE);
+    @Nullable
+    private CombatSkillTier combatSkillTierOverride;
 
     public int onPlayerJumpCoolDown;
     public int eatingColldown;
@@ -158,6 +179,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 		this.investigateSound = investigateSound.offset(this.random.nextInt(-1, 2), 0, this.random.nextInt(-1, 2));
 	}
 
+    @Override
     public void updateDynamicGameEventListener(
             BiConsumer<DynamicGameEventListener<?>, ServerLevel> listenerConsumer) {
         if (this.level() instanceof ServerLevel serverLevel) {
@@ -231,6 +253,9 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             if (event == GameEvent.STEP && sourceEntity instanceof Player player && player.isShiftKeyDown()) {
                 return false;
             }
+            if (event == GameEvent.STEP && !(sourceEntity instanceof Player)) {
+                return false;
+            }
             return !isHandledByExistingStimulusHook(event, sourceEntity);
         }
 
@@ -263,6 +288,14 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         @Override
         public boolean handleGameEvent(ServerLevel level, GameEvent event, GameEvent.Context context, Vec3 sourcePos) {
             Entity sourceEntity = context.sourceEntity();
+            if (event == GameEvent.STEP) {
+                if (sourceEntity instanceof Player player && player.isShiftKeyDown()) {
+                    return false;
+                }
+                // Never infer a step source from nearby entities. A missing source is
+                // intentionally silent so unrelated test arenas cannot leak events.
+                if (!(sourceEntity instanceof Player)) return false;
+            }
             if (!vibrationUser.canReceiveVibration(level, BlockPos.containing(sourcePos), event, context)) {
                 return false;
             }
@@ -351,6 +384,12 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         lastCombatTime = tickCount;
 
         if (damageSource.getEntity() instanceof LivingEntity attacker && attacker != this && this.canAttack(attacker)) {
+            if (tickCount - lastReceivedCombatHitTick <= 10) {
+                consecutiveReceivedCombatHits++;
+            } else {
+                consecutiveReceivedCombatHits = 1;
+            }
+            lastReceivedCombatHitTick = tickCount;
             setTarget(attacker);
         }
 
@@ -369,6 +408,12 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             }
         }
         return super.hurt(damageSource, amount);
+    }
+
+    public boolean isUnderMeleePressure() {
+        if (lastReceivedCombatHitTick == Integer.MIN_VALUE) return false;
+        int ticksSinceHit = tickCount - lastReceivedCombatHitTick;
+        return ticksSinceHit >= 0 && ticksSinceHit <= 14;
     }
 
     public UUID getPersistentAngerTarget() {
@@ -451,8 +496,27 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             return false;
         }
 
+        boolean critical = this.criticalStrikeReady
+                && entityIn instanceof LivingEntity target && !target.isBlocking();
+        AttributeInstance attackDamage = this.getAttribute(Attributes.ATTACK_DAMAGE);
+        if (critical && attackDamage != null) {
+            attackDamage.removeModifier(CRITICAL_DAMAGE_MODIFIER_UUID);
+            attackDamage.addTransientModifier(CRITICAL_DAMAGE_MODIFIER);
+        }
         this.resetFallDistance();
-        boolean result = super.doHurtTarget(entityIn);
+        boolean result;
+        try {
+            result = super.doHurtTarget(entityIn);
+        } finally {
+            if (critical && attackDamage != null) {
+                attackDamage.removeModifier(CRITICAL_DAMAGE_MODIFIER_UUID);
+            }
+            this.criticalStrikeReady = false;
+        }
+
+        if (result && critical) {
+            this.playSound(SoundEvents.PLAYER_ATTACK_CRIT, 1.0F, 1.0F);
+        }
 
         if (result && !getMainHandItem().isEmpty() && getMainHandItem().isDamageableItem()) {
             getMainHandItem().hurtAndBreak(1, this, entity -> entity.broadcastBreakEvent(EquipmentSlot.MAINHAND));
@@ -479,6 +543,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         float chance = 0.25F + (float) EnchantmentHelper.getBlockEfficiency(this) * 0.05F;
         if (increase) chance += 0.75;
         if (this.random.nextFloat() < chance) {
+            this.shieldDisabledUntilTick = this.tickCount + 100;
             this.shieldCoolDown = 100;
             this.shieldUpTicks = 0;
             this.stopUsingItem();
@@ -581,6 +646,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         compound.putInt("InvestigateSoundZ", this.investigateSound.getZ());
         compound.putInt("CobwebCooldown", this.cobwebCooldown);
         compound.putInt("CobwebsPlacedThisCombat", this.cobwebsPlacedThisCombat);
+        if (this.combatSkillTierOverride != null) compound.putInt("CombatSkillTier", this.combatSkillTierOverride.ordinal() + 1);
     }
 
     @Override
@@ -592,6 +658,9 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
                 compound.getInt("InvestigateSoundZ"));
         this.cobwebCooldown = Math.max(0, compound.getInt("CobwebCooldown"));
         this.cobwebsPlacedThisCombat = Math.max(0, compound.getInt("CobwebsPlacedThisCombat"));
+        int savedCombatTier = compound.getInt("CombatSkillTier");
+        this.combatSkillTierOverride = savedCombatTier >= 1 && savedCombatTier <= CombatSkillTier.values().length
+                ? CombatSkillTier.values()[savedCombatTier - 1] : null;
         this.equipmentDirty = true;
         setCombatTask();
     }
@@ -683,18 +752,14 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     }
 
     public boolean equipWeapon(Predicate<ItemStack> predicate, EquipmentSlot slot) {
+        if (getData() == null) return false;
         for (int i = 0; i < 16; i++) {
             ItemStack inventoryItem = getData().getInventoryItem(i);
             if (predicate.test(inventoryItem)) {
-
-                if (!getMainHandItem().isEmpty()) {
-                    putItemAway(getMainHandItem().copy());
-                }
-                if (!getOffhandItem().isEmpty()) {
-                    putItemAway(getOffhandItem().copy());
-                }
+                ItemStack previous = getItemBySlot(slot).copy();
                 setItemSlot(slot, inventoryItem.copy());
-                inventoryItem.shrink(inventoryItem.getCount());
+                getData().setInventoryItem(i, previous);
+                if (slot == EquipmentSlot.MAINHAND) equipmentDirty = false;
                 setCombatTask();
                 return true;
             }
@@ -914,6 +979,12 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     @Override
     public void tick() {
+        if (!this.level().isClientSide) {
+            this.combatIntent = this.combatTacticsController.evaluate();
+            if (this.combatIntent.action() == CombatAction.SWITCH_TO_SHIELD_DISABLER) {
+                equipShieldDisabler();
+            }
+        }
         super.tick();
         sanityClearPendingDrinkItem();
         if (this.lookForChestCooldown > 0) this.lookForChestCooldown--;
@@ -1062,6 +1133,51 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         if (getOffhandItem().isEmpty()) {
             equipWeapon(HumanUtil::isShield, EquipmentSlot.OFFHAND);
         }
+    }
+
+    private void equipShieldDisabler() {
+        if (getData() == null || isUsingItem() || getTarget() == null || !getTarget().isBlocking()) return;
+        ItemStack shield = getTarget().getUseItem();
+        if (!getMainHandItem().isEmpty()
+                && getMainHandItem().canDisableShield(shield, getTarget(), this)) {
+            return;
+        }
+        for (int slot = 0; slot < getData().getInventoryItemsSize(); slot++) {
+            ItemStack candidate = getData().getInventoryItem(slot);
+            if (!candidate.isEmpty() && candidate.canDisableShield(shield, getTarget(), this)) {
+                ItemStack previous = getMainHandItem().copy();
+                setItemSlot(EquipmentSlot.MAINHAND, candidate.copy());
+                getData().setInventoryItem(slot, previous);
+                equipmentDirty = false;
+                shieldDisablerSwapSlot = slot;
+                shieldDisablerRestoreDeadline = tickCount + 50;
+                shieldDisablerTarget = getTarget().getUUID();
+                switchingWeaponCoolDown = Math.max(switchingWeaponCoolDown, 10);
+                return;
+            }
+        }
+    }
+
+    private boolean restoreWeaponAfterShieldBreak() {
+        if (shieldDisablerSwapSlot < 0 || getData() == null || isUsingItem()) return false;
+        LivingEntity target = getTarget();
+        boolean sameTarget = target != null && target.getUUID().equals(shieldDisablerTarget);
+        boolean stillVisiblyBlocking = sameTarget && hasLineOfSight(target) && target.isBlocking();
+        if (stillVisiblyBlocking && tickCount < shieldDisablerRestoreDeadline) return false;
+
+        ItemStack previousWeapon = getData().getInventoryItem(shieldDisablerSwapSlot);
+        if (!previousWeapon.isEmpty()) {
+            ItemStack disabler = getMainHandItem().copy();
+            setItemSlot(EquipmentSlot.MAINHAND, previousWeapon.copy());
+            getData().setInventoryItem(shieldDisablerSwapSlot, disabler);
+            equipmentDirty = false;
+            switchingWeaponCoolDown = Math.max(switchingWeaponCoolDown, 10);
+        }
+        shieldDisablerSwapSlot = -1;
+        shieldDisablerRestoreDeadline = 0;
+        shieldDisablerTarget = null;
+        setCombatTask();
+        return true;
     }
 
     private void tryEquipTotem() {
@@ -1237,43 +1353,53 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     }
 
     private void tryEquipWeapon() {
+        updateCombatWeaponSelection();
+        tryUsePreAttackBuff();
+    }
 
-        if (equipmentDirty && !isUsingItem() && !isFleeing) {
-            reevaluateEquipment();
-        }
+    /** Selects between owned ranged and melee weapons using distance hysteresis. */
+    public void updateCombatWeaponSelection() {
+        if (level().isClientSide || getData() == null || isFleeing || isUsingItem()) return;
+        if (restoreWeaponAfterShieldBreak()) return;
+        if (shieldDisablerSwapSlot >= 0) return;
 
-        if (getTarget() == null && tickCount % (20 * 10) == 0) {
-            equipWeapon(HumanUtil::isRangedWeapon);
-        }
-
-        // try to equip trident again
-        if (tickCount % (20 * 10) == 0) {
-            equipWeapon(HumanUtil::isTrident);
-        }
-
-        if (getMainHandItem().isEmpty()) {
-            if (!equipWeapon(HumanUtil::isTrident))
-                equipWeapon(HumanUtil::isMeleeWeapon);
-        } else if (switchingWeaponCoolDown == 0
-                || (this.getTarget() != null
-                && this.getTarget().distanceTo(this) < 6.0F
-                && HumanUtil.isRangedWeapon(this.getMainHandItem()))) {
-            if (this.getTarget() != null && tickCount > 10 && !isUsingItem()) {
-                boolean isTargetFar = this.getTarget().distanceTo(this) >= 6.0F && this.ticksEyesOutOfWater > 120;
-
-                ItemStack handItem = getItemBySlot(EquipmentSlot.MAINHAND);
-                boolean forcedMelee = this.getHealth() <= this.getMaxHealth() * 0.3f && String.valueOf(getId()).hashCode() % 100 < 20;
-
-                if ((forcedMelee || !isTargetFar) && !MeleeWeaponSelector.isMeleeCandidate(handItem)) {
-                    reevaluateEquipment();
-                } else if (isTargetFar && !isRangedWeapon(handItem)) {
-                    equipWeapon(HumanUtil::isRangedWeapon);
-                }
-                switchingWeaponCoolDown = 3 * 20;
+        ItemStack handItem = getMainHandItem();
+        if (equipmentDirty) {
+            if (HumanUtil.isRangedWeapon(handItem)) {
+                // A deliberate/spawned ranged weapon is valid equipment; the melee selector
+                // must not immediately replace it on the following equipment-dirty tick.
+                equipmentDirty = false;
+            } else {
+                reevaluateEquipment();
+                handItem = getMainHandItem();
             }
         }
 
-        tryUsePreAttackBuff();
+        if (handItem.isEmpty()) {
+            if (!equipWeapon(HumanUtil::isTrident)) equipWeapon(HumanUtil::isMeleeWeapon);
+            return;
+        }
+
+        LivingEntity target = getTarget();
+        if (target == null) {
+            if (tickCount % (20 * 10) == 0 && switchingWeaponCoolDown == 0) {
+                equipWeapon(HumanUtil::isRangedWeapon);
+            }
+            return;
+        }
+        if (tickCount <= 10 || switchingWeaponCoolDown > 0 || !hasLineOfSight(target)) return;
+
+        float distance = target.distanceTo(this);
+        boolean forcedMelee = getHealth() <= getMaxHealth() * 0.3F
+                && Math.floorMod(getId(), 100) < 20;
+        if (!forcedMelee && distance >= 8.0F && !isUnderMeleePressure()
+                && !HumanUtil.isRangedWeapon(handItem)) {
+            if (equipWeapon(HumanUtil::isRangedWeapon)) switchingWeaponCoolDown = 40;
+        } else if ((forcedMelee || distance <= 5.0F)
+                && HumanUtil.isRangedWeapon(handItem)) {
+            reevaluateEquipment();
+            switchingWeaponCoolDown = Math.max(switchingWeaponCoolDown, 30);
+        }
     }
 
     public void markEquipmentDirty() {
@@ -1298,6 +1424,23 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         }
     }
 
+    public CombatIntent getCombatIntent() {
+        return this.combatIntent;
+    }
+
+    public CombatTacticsController getCombatTacticsController() {
+        return this.combatTacticsController;
+    }
+
+    @Nullable
+    public CombatSkillTier getCombatSkillTierOverride() {
+        return this.combatSkillTierOverride;
+    }
+
+    public void setCombatSkillTierOverride(@Nullable CombatSkillTier tier) {
+        this.combatSkillTierOverride = tier;
+    }
+
     @Override
     public void aiStep() {
         super.aiStep();
@@ -1313,8 +1456,15 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         }
 
         if (this.shieldCoolDown > 0) --this.shieldCoolDown;
+        if (this.shieldDisabledUntilTick > 0 && this.shieldDisabledUntilTick <= this.tickCount) {
+            this.shieldDisabledUntilTick = 0;
+        }
         if (this.switchingWeaponCoolDown > 0) --this.switchingWeaponCoolDown;
         if (this.cobwebCooldown > 0) --this.cobwebCooldown;
+        if (this.consecutiveReceivedCombatHits > 0
+                && this.tickCount - this.lastReceivedCombatHitTick > 20) {
+            this.consecutiveReceivedCombatHits = 0;
+        }
 
         if (this.onPlayerJumpCoolDown > 0) --this.onPlayerJumpCoolDown;
         if (this.eatingColldown > 0) --this.eatingColldown;

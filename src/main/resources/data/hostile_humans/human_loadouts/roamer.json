@@ -26,7 +26,8 @@
   },
   "inventory": [
     { "item": "minecraft:iron_sword", "weight": 2 },
-    { "item": "minecraft:stone_sword", "weight": 2 }
+    { "item": "minecraft:stone_sword", "weight": 2 },
+    { "item": "minecraft:diamond_axe", "weight": 1 }
   ],
   "bonus_mainhand": {
     "chance": 0.05,

@@ -3,6 +3,7 @@ package com.craftix.hostile_humans.entity.ai.control;
 import com.craftix.hostile_humans.Config;
 import com.craftix.hostile_humans.HumanUtil;
 import com.craftix.hostile_humans.entity.entities.Human;
+import com.craftix.hostile_humans.entity.ai.combat.CombatAction;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.tags.BlockTags;
@@ -25,6 +26,7 @@ public class HumanEntityWalkControl extends MoveControl {
 
     @Override
     public void tick() {
+        if (!this.mob.level().isClientSide) prepareCombatMovement();
         if (!this.mob.onGround() && this.operation == MoveControl.Operation.MOVE_TO) {
             this.operation = MoveControl.Operation.JUMPING;
         }
@@ -132,6 +134,31 @@ public class HumanEntityWalkControl extends MoveControl {
         }
     }
 
+    private void prepareCombatMovement() {
+        if (human.isFleeing || human.toAvoid != null || human.healingAfterFleeTicks > 0) return;
+        CombatAction action = human.getCombatIntent().action();
+        if (action != CombatAction.STRAFE_LEFT && action != CombatAction.STRAFE_RIGHT
+                && action != CombatAction.BACKSTEP) {
+            return;
+        }
+        LivingEntity target = human.getTarget();
+        if (target == null || !human.hasLineOfSight(target)) return;
+        human.getLookControl().setLookAt(target, 30.0F, 30.0F);
+        if (action == CombatAction.BACKSTEP) {
+            this.strafeForwards = -0.85F;
+            this.strafeRight = 0.0F;
+        } else if (human.getCombatIntent().tactic() == com.craftix.hostile_humans.entity.ai.combat.CombatTactic.DISENGAGE) {
+            this.strafeForwards = -0.85F;
+            this.strafeRight = action == CombatAction.STRAFE_LEFT ? 0.35F : -0.35F;
+        } else {
+            this.strafeForwards = human.getCombatIntent().allowMeleeAttack() ? 0.55F : -0.45F;
+            this.strafeRight = action == CombatAction.STRAFE_LEFT ? 0.35F : -0.35F;
+        }
+        this.speedModifier = human.getCombatIntent().tactic() == com.craftix.hostile_humans.entity.ai.combat.CombatTactic.DISENGAGE
+                ? 1.15D : 0.85D;
+        this.operation = MoveControl.Operation.STRAFE;
+    }
+
     private boolean tryRunJump(LivingEntity target) {
         if (!Config.runJump.get() || target == null || this.human.isFleeing
                 || this.human.healingAfterFleeTicks > 0
@@ -181,4 +208,3 @@ public class HumanEntityWalkControl extends MoveControl {
         this.human.setSprinting(shouldSprint);
     }
 }
-

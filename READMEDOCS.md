@@ -2,6 +2,57 @@
 
 ## Tactical equipment
 
+### Observable shield combat
+
+Shield tactics run on the logical server and use only signals that a human can
+observe: visible held items, blocking state, an already-started swing, visible
+projectiles, distance, orientation, velocity and line of sight. They do not read
+the player's attack cooldown, hidden inventory, future item selection or future
+trajectory.
+
+The tactical controller uses `ShieldState` and `CombatTactic` instead of a
+permanent `shouldBlock` flag. It keeps short commitment windows, uses the normal
+`LivingEntity.startUsingItem(OFF_HAND)` / `stopUsingItem()` path, and lets Forge
+handle shield direction, durability, sounds and synchronization. A non-player
+human has its own server-side shield-disable deadline because vanilla player
+cooldowns are not automatically available to mobs.
+
+A visible weapon capable of disabling the shield is treated as an observable
+melee threat, not as a reason to lower the shield preemptively. The human keeps
+blocking through its wind-up; only a connected hit can start shield disablement.
+
+Competitive combat skill is represented independently from the loadout tier as
+T1 through T5, where T1 is strongest. The assignment is stable per entity and
+varies slightly around the loadout baseline; it is never rerolled every tick.
+All combat tiers use the player's three-block melee reach. Their attack
+cooldowns are scaled by skill tier so every tier can chain repeated melee hits;
+T1 chains fastest while T5 remains more aggressive than the previous baseline.
+
+Server settings:
+
+```toml
+[tacticalEquipment]
+enableShieldTactics = true
+enableProjectileBlocking = true
+enableShieldBreaking = true
+```
+
+Manual shield scenarios:
+
+- `function hostile_humans:debug/shield_sword_duel`
+- `function hostile_humans:debug/shield_axe_counter`
+- `function hostile_humans:debug/shield_break_enemy`
+- `function hostile_humans:debug/shield_projectile_approach`
+- `function hostile_humans:debug/shield_low_health`
+- `function hostile_humans:debug/shield_t1_duel`
+- `function hostile_humans:debug/shield_tactics_arena` creates ten separate glass
+  rooms: T5, T4, T3, T2, T1, frontal sword blocking, visible axe response,
+  shield breaking, projectile defense and low-health retreat/healing. Every room
+  contains a sign with the specific action to perform and the expected behavior.
+
+These are qualitative scenarios. Use walls and visible hand changes to verify
+that the human does not react to hidden information.
+
 Humans use a deterministic melee policy when they enter close combat or finish
 collecting an item. Primary melee items are selected before fallback tools.
 Primary items include swords and axes through the `hostile_humans:primary_melee_weapons`

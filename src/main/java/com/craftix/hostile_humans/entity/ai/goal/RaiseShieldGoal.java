@@ -1,7 +1,9 @@
 package com.craftix.hostile_humans.entity.ai.goal;
 
 import com.craftix.hostile_humans.HumanUtil;
+import com.craftix.hostile_humans.Config;
 import com.craftix.hostile_humans.entity.entities.Human;
+import com.craftix.hostile_humans.entity.ai.combat.ShieldState;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
@@ -22,6 +24,12 @@ public class RaiseShieldGoal extends Goal {
 
     @Override
     public boolean canUse() {
+        if (Config.enableShieldTactics.get()) {
+            ShieldState state = human.getCombatIntent().shieldState();
+            return (state == ShieldState.RAISING || state == ShieldState.BLOCKING)
+                    && human.shieldDisabledUntilTick <= human.tickCount
+                    && human.getOffhandItem().canPerformAction(ToolActions.SHIELD_BLOCK);
+        }
         if (!human.getOffhandItem().getItem().canPerformAction(human.getOffhandItem(), ToolActions.SHIELD_BLOCK)
                 || human.shieldCoolDown > 0
                 || HumanUtil.isRangedWeapon(human.getMainHandItem())) {
@@ -47,14 +55,17 @@ public class RaiseShieldGoal extends Goal {
     @Override
     public void start() {
         if (human.getOffhandItem().getItem().canPerformAction(human.getOffhandItem(), net.minecraftforge.common.ToolActions.SHIELD_BLOCK)) {
-        	human.shieldUpTicks = 20;
-        	human.startUsingItem(InteractionHand.OFF_HAND);
+            if (human.shieldUpTicks <= 0) human.shieldUpTicks = 20;
+            if (!human.isUsingItem()) human.startUsingItem(InteractionHand.OFF_HAND);
         }
     }
 
     @Override
     public void stop() {
-        human.stopUsingItem();
+        if (human.isUsingItem() && human.getUsedItemHand() == InteractionHand.OFF_HAND
+                && human.getUseItem().canPerformAction(ToolActions.SHIELD_BLOCK)) {
+            human.stopUsingItem();
+        }
         if (human.shieldCoolDown == 0) human.shieldCoolDown = 6;
     }
 

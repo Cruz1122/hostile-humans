@@ -39,6 +39,9 @@ public class Config {
     public static ForgeConfigSpec.IntValue cobwebCooldownTicks;
     public static ForgeConfigSpec.IntValue maxCobwebsPerCombat;
     public static ForgeConfigSpec.DoubleValue cobwebPlacementReach;
+    public static ForgeConfigSpec.BooleanValue enableShieldTactics;
+    public static ForgeConfigSpec.BooleanValue enableProjectileBlocking;
+    public static ForgeConfigSpec.BooleanValue enableShieldBreaking;
 
     static {
         BUILDER.push("Hostile Humans Settings");
@@ -75,6 +78,12 @@ public class Config {
                 .defineInRange("maxCobwebsPerCombat", 2, 0, 8);
         cobwebPlacementReach = SERVER_BUILDER.comment("Maximum distance from the human for a tactical cobweb")
                 .defineInRange("cobwebPlacementReach", 2.5D, 1.0D, 4.5D);
+        enableShieldTactics = SERVER_BUILDER.comment("Enable observable tactical shield behavior")
+                .define("enableShieldTactics", true);
+        enableProjectileBlocking = SERVER_BUILDER.comment("Allow tactical shield reactions to visible incoming projectiles")
+                .define("enableProjectileBlocking", true);
+        enableShieldBreaking = SERVER_BUILDER.comment("Allow tactical switching to weapons that can disable visible shields")
+                .define("enableShieldBreaking", true);
         SERVER_BUILDER.pop();
 
         BUILDER.pop();

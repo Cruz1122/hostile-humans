@@ -49,13 +49,12 @@ public class HumanInventoryGenerator {
             }
         }
 
-        if (HumanUtil.isRangedWeapon(human.getItemBySlot(EquipmentSlot.MAINHAND))) {
-            ItemStack backupWeapon = createStack(loadout.inventory.roll(random), human, loadout.rules.damagePercentMin, loadout.rules.damagePercentMax);
-            if (!backupWeapon.isEmpty()) {
-                backupWeapon.enchant(Enchantments.VANISHING_CURSE, 1);
-                human.getData().setInventoryItem(0, backupWeapon);
-            }
-        }
+        int backupSlot = 0;
+        boolean mainhandRanged = HumanUtil.isRangedWeapon(human.getItemBySlot(EquipmentSlot.MAINHAND));
+        HumanLoadoutManager.ItemPool alternatePool = mainhandRanged
+                ? loadout.inventory : loadout.rangedMainhand;
+        backupSlot = storeBackupWeapon(human, alternatePool, loadout, random, backupSlot);
+        storeBackupWeapon(human, loadout.inventory, loadout, random, backupSlot);
 
         HumanLoadoutManager.ArmorSetEntry armorSet = loadout.armorSets.roll(random);
         if (armorSet != null) {
@@ -110,6 +109,18 @@ public class HumanInventoryGenerator {
         }
 
         return damage(human, item.getDefaultInstance(), damagePercentMin, damagePercentMax);
+    }
+
+    private static int storeBackupWeapon(Human human, HumanLoadoutManager.ItemPool pool,
+                                         HumanLoadoutManager.HumanLoadout loadout,
+                                         RandomSource random, int slot) {
+        if (pool == null || pool.isEmpty() || slot >= human.getData().getInventoryItemsSize()) return slot;
+        ItemStack backup = createStack(pool.roll(random), human,
+                loadout.rules.damagePercentMin, loadout.rules.damagePercentMax);
+        if (backup.isEmpty()) return slot;
+        backup.enchant(Enchantments.VANISHING_CURSE, 1);
+        human.getData().setInventoryItem(slot, backup);
+        return slot + 1;
     }
 
     private static void applyFallbackInventory(Human human, boolean forceRanged) {

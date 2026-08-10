@@ -24,6 +24,7 @@ import java.util.UUID;
 @PrefixGameTestTemplate(false)
 public final class HumanSmokeGameTest {
     private static final String TEMPLATE = "human_smoke";
+    private static final String SOUND_TEMPLATE = "warehouse";
     private static final String DEBUG_TAG = "hh_debug";
 
     private HumanSmokeGameTest() {
@@ -62,36 +63,40 @@ public final class HumanSmokeGameTest {
     }
 
     @GameTest(
-            template = TEMPLATE,
+            template = SOUND_TEMPLATE,
             templateNamespace = "hostile_humans",
             batch = "soundInvestigation",
             timeoutTicks = 160)
     public static void humanInvestigatesBrokenBlockBehindClosedDoor(GameTestHelper helper) {
-        BlockPos spawnPos = helper.absolutePos(new BlockPos(12, 1, 12));
-        BlockPos stimulusPos = helper.absolutePos(new BlockPos(12, 1, 1));
-        for (int x = 0; x <= 24; x++) {
-            for (int z = 0; z <= 24; z++) {
+        helper.killAllEntities();
+        BlockPos spawnPos = helper.absolutePos(new BlockPos(14, 1, 10));
+        BlockPos stimulusPos = helper.absolutePos(new BlockPos(14, 1, 5));
+        BlockPos playerPos = helper.absolutePos(new BlockPos(14, 1, 6));
+        for (int x = 10; x <= 18; x++) {
+            for (int z = 4; z <= 12; z++) {
                 helper.setBlock(new BlockPos(x, 0, z), Blocks.STONE.defaultBlockState());
-                for (int y = 1; y <= 4; y++) {
+                for (int y = 1; y <= 6; y++) {
                     helper.setBlock(new BlockPos(x, y, z), Blocks.AIR.defaultBlockState());
                 }
             }
         }
         for (int y = 1; y <= 3; y++) {
-            for (int axis = 6; axis <= 18; axis++) {
-                helper.setBlock(new BlockPos(axis, y, 6), Blocks.STONE.defaultBlockState());
-                helper.setBlock(new BlockPos(axis, y, 18), Blocks.STONE.defaultBlockState());
-                helper.setBlock(new BlockPos(6, y, axis), Blocks.STONE.defaultBlockState());
-                helper.setBlock(new BlockPos(18, y, axis), Blocks.STONE.defaultBlockState());
+            for (int z = 7; z <= 12; z++) {
+                helper.setBlock(new BlockPos(12, y, z), Blocks.STONE.defaultBlockState());
+                helper.setBlock(new BlockPos(16, y, z), Blocks.STONE.defaultBlockState());
+            }
+            for (int x = 12; x <= 16; x++) {
+                helper.setBlock(new BlockPos(x, y, 7), Blocks.STONE.defaultBlockState());
+                helper.setBlock(new BlockPos(x, y, 12), Blocks.STONE.defaultBlockState());
             }
         }
-        helper.setBlock(new BlockPos(12, 1, 6), Blocks.OAK_DOOR.defaultBlockState()
+        helper.setBlock(new BlockPos(14, 1, 7), Blocks.OAK_DOOR.defaultBlockState()
                 .setValue(DoorBlock.FACING, Direction.NORTH)
                 .setValue(DoorBlock.HALF, DoubleBlockHalf.LOWER));
-        helper.setBlock(new BlockPos(12, 2, 6), Blocks.OAK_DOOR.defaultBlockState()
+        helper.setBlock(new BlockPos(14, 2, 7), Blocks.OAK_DOOR.defaultBlockState()
                 .setValue(DoorBlock.FACING, Direction.NORTH)
                 .setValue(DoorBlock.HALF, DoubleBlockHalf.UPPER));
-        helper.setBlock(new BlockPos(12, 1, 1), Blocks.GOLD_BLOCK.defaultBlockState());
+        helper.setBlock(new BlockPos(14, 1, 5), Blocks.GOLD_BLOCK.defaultBlockState());
 
         CompoundTag entityTag = new CompoundTag();
         entityTag.putString("id", "hostile_humans:human_tier1");
@@ -118,8 +123,8 @@ public final class HumanSmokeGameTest {
                             helper.getLevel(),
                             new GameProfile(UUID.randomUUID(), "hh-sound-move"));
                     player.setGameMode(GameType.SURVIVAL);
-                    player.moveTo(stimulusPos.getX() + 0.5D, stimulusPos.getY(),
-                            stimulusPos.getZ() - 1.5D, 0.0F, 0.0F);
+                    player.moveTo(playerPos.getX() + 0.5D, playerPos.getY(),
+                            playerPos.getZ() + 0.5D, 0.0F, 0.0F);
                     if (!helper.getLevel().addFreshEntity(player)) {
                         helper.fail("survival FakePlayer was not added for sound investigation");
                         return;

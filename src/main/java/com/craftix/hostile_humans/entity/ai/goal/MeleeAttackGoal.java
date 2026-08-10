@@ -4,9 +4,13 @@ import com.craftix.hostile_humans.Config;
 import com.craftix.hostile_humans.HumanUtil;
 import com.craftix.hostile_humans.entity.HumanEntity;
 import com.craftix.hostile_humans.entity.entities.Human;
+import com.craftix.hostile_humans.entity.ai.combat.CombatSkillTier;
 import com.craftix.hostile_humans.entity.equipment.MeleeWeaponSelector;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.pathfinder.Path;
@@ -17,6 +21,7 @@ import static com.craftix.hostile_humans.entity.HumanMobEntityData.DATA_SIT_POS;
 
 public class MeleeAttackGoal extends HumanGoal {
     private static final long COOLDOWN_BETWEEN_CAN_USE_CHECKS = 5L;
+    private static final double PLAYER_ATTACK_REACH_SQR = 9.0D;
     private final double speedModifier;
     private final boolean followingTargetEvenIfNotSeen;
     private final boolean canPenalize = false;
@@ -38,6 +43,9 @@ public class MeleeAttackGoal extends HumanGoal {
 
     @Override
     public boolean canUse() {
+        if (mob instanceof Human human && !human.getCombatIntent().allowMeleeAttack()) {
+            return false;
+        }
         if (this.mob instanceof Human human && human.isSleepingOrLyingDown())
             return false;
 
@@ -76,6 +84,9 @@ public class MeleeAttackGoal extends HumanGoal {
 
     @Override
     public boolean canContinueToUse() {
+        if (mob instanceof Human human && !human.getCombatIntent().allowMeleeAttack()) {
+            return false;
+        }
         if (this.mob instanceof Human human && human.isSleepingOrLyingDown())
             return false;
 
@@ -173,30 +184,102 @@ public class MeleeAttackGoal extends HumanGoal {
     }
 
     protected void checkAndPerformAttack(LivingEntity livingEntity, double attackDistance) {
-
         double distance = this.getAttackReachSqr(livingEntity);
         boolean preparingBuff = this.mob instanceof Human human && human.isPreparingPreAttackBuff();
         boolean lyingDown = this.mob instanceof Human human && human.isSleepingOrLyingDown();
-        if (!lyingDown && !preparingBuff && attackDistance <= distance && this.ticksUntilNextAttack <= 0) {
-            this.resetAttackCooldown();
-            if (mob.isBlocking()) {
-                mob.stopUsingItem();
-            }
-            if (this.mob instanceof Human human) {
-                human.lastCombatTime = human.tickCount;
-            }
-            this.mob.doHurtTarget(livingEntity);
+        double extendedSwingRange = distance * 1.35D;
+        boolean attackAllowed = !(this.mob instanceof Human human)
+                || human.getCombatIntent().allowMeleeAttack();
+        if (lyingDown || preparingBuff || !attackAllowed
+                || attackDistance > extendedSwingRange || this.ticksUntilNextAttack > 0) {
+            return;
         }
+
+        if (this.mob instanceof Human human && attackDistance > distance) {
+            this.resetAttackCooldown();
+            human.lastCombatTime = human.tickCount;
+            // Pressure outside real reach is observable commitment only; it never deals damage.
+            human.swing(net.minecraft.world.InteractionHand.MAIN_HAND);
+            return;
+        }
+
+        if (this.mob instanceof Human human) {
+            if (human.criticalAttackArmedUntilTick > 0) {
+                if (human.tickCount > human.criticalAttackArmedUntilTick) {
+                    human.criticalAttackArmedUntilTick = 0;
+                } else if (!human.onGround() && human.fallDistance > 0.0F) {
+                    human.criticalStrikeReady = true;
+                    human.criticalAttackArmedUntilTick = 0;
+                } else if (human.onGround()
+                        && human.tickCount > human.criticalAttackArmedUntilTick - 15) {
+                    // The jump was obstructed or already landed; do not stall melee for a full
+                    // cooldown waiting for a critical that can no longer happen.
+                    human.criticalAttackArmedUntilTick = 0;
+                } else {
+                    return;
+                }
+            } else if (shouldAttemptCritical(human, livingEntity)
+                    && human.onGround() && human.getDeltaMovement().y <= 0.0D) {
+                human.getJumpControl().jump();
+                human.criticalAttackArmedUntilTick = human.tickCount + 20;
+                return;
+            }
+            human.lastCombatTime = human.tickCount;
+        }
+
+        this.resetAttackCooldown();
+        if (mob.isBlocking()) {
+            mob.stopUsingItem();
+        }
+        this.mob.doHurtTarget(livingEntity);
+    }
+
+    private boolean shouldAttemptCritical(Human human, LivingEntity target) {
+        CombatSkillTier tier = human.getCombatTacticsController().skillTier();
+        if (tier.criticalChance() <= 0.0D || target.isBlocking()
+                || human.getCombatIntent().incomingProjectile() || human.isUnderMeleePressure()) {
+            return false;
+        }
+        long seed = human.getUUID().getLeastSignificantBits()
+                ^ target.getUUID().getMostSignificantBits() ^ human.tickCount / 4L;
+        return Math.floorMod(seed, 10000) / 10000.0D < tier.criticalChance();
     }
 
     protected void resetAttackCooldown() {
         int cooldownMin = Math.min(Config.meleeAttackCooldownMin.get(), Config.meleeAttackCooldownMax.get());
         int cooldownMax = Math.max(Config.meleeAttackCooldownMin.get(), Config.meleeAttackCooldownMax.get());
+        if (mob instanceof Human human) {
+            CombatSkillTier tier = human.getCombatTacticsController().skillTier();
+            cooldownMin = tier.attackCooldownMin(cooldownMin);
+            cooldownMax = tier.attackCooldownMax(cooldownMax, cooldownMin);
+        }
+        int weaponCooldown = weaponCooldownTicks(mob.getMainHandItem());
+        cooldownMin = Math.max(cooldownMin, weaponCooldown);
+        cooldownMax = Math.max(cooldownMax, weaponCooldown);
         this.ticksUntilNextAttack = this.adjustedTickDelay(mob.getRandom().nextInt(cooldownMin, cooldownMax + 1));
     }
 
+    /** Returns the vanilla attack-strength recovery time for the equipped main-hand item. */
+    public static int weaponCooldownTicks(ItemStack stack) {
+        double attackSpeed = Attributes.ATTACK_SPEED.getDefaultValue();
+        var modifiers = stack.getAttributeModifiers(EquipmentSlot.MAINHAND)
+                .get(Attributes.ATTACK_SPEED);
+        double multiplyBase = 0.0D;
+        double multiplyTotal = 0.0D;
+        for (AttributeModifier modifier : modifiers) {
+            switch (modifier.getOperation()) {
+                case ADDITION -> attackSpeed += modifier.getAmount();
+                case MULTIPLY_BASE -> multiplyBase += modifier.getAmount();
+                case MULTIPLY_TOTAL -> multiplyTotal += modifier.getAmount();
+            }
+        }
+        attackSpeed *= 1.0D + multiplyBase;
+        attackSpeed *= 1.0D + multiplyTotal;
+        return (int) Math.ceil(20.0D / Math.max(0.1D, attackSpeed));
+    }
+
     protected double getAttackReachSqr(LivingEntity livingEntity) {
-        return this.mob.getBbWidth() * 3.0F * this.mob.getBbWidth() * 3.0F + livingEntity.getBbWidth();
+        return PLAYER_ATTACK_REACH_SQR;
     }
 
     private boolean hasMeleeSlot(LivingEntity target) {

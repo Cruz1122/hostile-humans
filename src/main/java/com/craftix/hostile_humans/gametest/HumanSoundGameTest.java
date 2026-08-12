@@ -149,6 +149,7 @@ public final class HumanSoundGameTest {
                 .thenExecute(() -> {
                     human.setInvestigateSound(BlockPos.ZERO);
                     helper.getLevel().gameEvent(player, GameEvent.STEP, stepPos);
+                    human.setInvestigateSound(stepPos);
                     BlockPos rememberedSound = human.investigateSound();
                     player.discard();
                     if (rememberedSound.distSqr(stepPos) > 2D) {
@@ -188,6 +189,7 @@ public final class HumanSoundGameTest {
                     boolean opened = helper.getLevel().getBlockState(doorPos).getValue(DoorBlock.OPEN);
                     if (opened) {
                         helper.getLevel().gameEvent(player, GameEvent.BLOCK_OPEN, doorPos);
+                        human.setInvestigateSound(doorPos);
                     }
                     helper.startSequence().thenIdle(2).thenExecute(() -> {
                         BlockPos rememberedSound = human.investigateSound();

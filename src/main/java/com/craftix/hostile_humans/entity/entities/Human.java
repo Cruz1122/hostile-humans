@@ -271,7 +271,8 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
                 @Nullable Entity sourceEntity,
                 @Nullable Entity projectileOwner,
                 float distance) {
-            if (Human.this.getTarget() == null && !Human.this.isInvestigatingSound()) {
+            if (Human.this.getTarget() == null
+                    && (!Human.this.isInvestigatingSound() || sourceEntity instanceof Player)) {
                 Human.this.setInvestigateSound(sourcePos);
             }
         }
@@ -447,6 +448,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         goalSelector.addGoal(0, new InvestigateSoundGoal(this, 1.0F));
         goalSelector.addGoal(1, new PotionRangedAttackGoal(this, 1.0, 10, 10));
         goalSelector.addGoal(3, new RaiseShieldGoal(this));
+        goalSelector.addGoal(-1, new ItemLootGoal(this, 1.0D));
         goalSelector.addGoal(7, new ChestLootGoal(this, 0.8D));
         goalSelector.addGoal(-30, new LookForBedGoal(this, 1.0F));
         if ((this.getType() == ROAMER.get())) {

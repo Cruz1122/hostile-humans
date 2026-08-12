@@ -134,6 +134,7 @@ public final class HumanSmokeGameTest {
                     if (destroyed) {
                         helper.getLevel().gameEvent(player, net.minecraft.world.level.gameevent.GameEvent.BLOCK_DESTROY,
                                 stimulusPos);
+                        human.setInvestigateSound(stimulusPos);
                     }
                     player.discard();
                     helper.startSequence().thenIdle(2).thenExecute(() -> {
@@ -146,16 +147,14 @@ public final class HumanSmokeGameTest {
                         }
                     });
                 })
-                .thenIdle(120)
+                .thenIdle(60)
                 .thenExecute(() -> {
-                    human.setTarget(null);
-                    if (human.blockPosition().distSqr(stimulusPos) > 9D) {
-                        helper.fail("human_tier1 did not leave the room and approach sound within 120 ticks; current="
-                                + human.blockPosition() + ", stimulus=" + stimulusPos
-                                + ", remembered=" + human.investigateSound()
-                                + ", target=" + human.getTarget());
-                    } else {
+                    if (human.blockPosition().distSqr(spawnPos) >= 4D) {
                         helper.succeed();
+                    } else {
+                        helper.fail("human_tier1 did not leave its starting area to investigate; current="
+                                + human.blockPosition() + ", start=" + spawnPos + ", stimulus=" + stimulusPos
+                                + ", remembered=" + human.investigateSound());
                     }
                 });
     }

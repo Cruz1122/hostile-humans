@@ -26,7 +26,7 @@ public abstract class BlockMixin {
 	public void useInject(Level pLevel, BlockPos pPos, BlockState pState, Player pPlayer, CallbackInfo ci) {
 		if (!pLevel.isClientSide) {
 			for (Human human : pLevel.getEntitiesOfClass(Human.class, new AABB(pPos).inflate(16.0))) {
-				if (!human.isInvestigatingSound()) human.setInvestigateSound(pPos);
+				human.setInvestigateSound(pPos);
 			}
 		}
 	}

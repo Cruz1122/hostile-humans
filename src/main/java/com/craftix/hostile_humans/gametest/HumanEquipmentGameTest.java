@@ -1,5 +1,6 @@
 package com.craftix.hostile_humans.gametest;
 
+import com.craftix.hostile_humans.entity.AggressionMode;
 import com.craftix.hostile_humans.entity.entities.Human;
 import com.craftix.hostile_humans.entity.entities.ModEntityType;
 import com.craftix.hostile_humans.entity.equipment.MeleeWeaponSelector;
@@ -133,6 +134,27 @@ public final class HumanEquipmentGameTest {
         helper.startSequence().thenIdle(5).thenExecute(() -> {
             helper.assertTrue(near.isRemoved(), "Nearby loot was not picked up");
             helper.assertTrue(far.isAlive(), "Loot outside vanilla mob reach was pulled in");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalEquipment", timeoutTicks = 160)
+    public static void humanWalksToNearbyUsefulDrop(GameTestHelper helper) {
+        Human human = createHuman(helper, new BlockPos(1, 1, 2));
+        human.setNoAi(false);
+        human.setAggressionLevel(AggressionMode.PASSIVE);
+        ItemEntity droppedSword = new ItemEntity(helper.getLevel(),
+                helper.absolutePos(new BlockPos(4, 1, 2)).getX() + 0.5D,
+                helper.absolutePos(new BlockPos(4, 1, 2)).getY(),
+                helper.absolutePos(new BlockPos(4, 1, 2)).getZ() + 0.5D,
+                new ItemStack(Items.DIAMOND_SWORD));
+        droppedSword.setPickUpDelay(0);
+        helper.getLevel().addFreshEntity(droppedSword);
+
+        helper.startSequence().thenExecuteAfter(120, () -> {
+            helper.assertTrue(droppedSword.isRemoved(), "Human did not walk to and pick up nearby useful loot");
+            helper.assertTrue(human.getMainHandItem().is(Items.DIAMOND_SWORD),
+                    "Human did not equip the useful item it looted");
             helper.succeed();
         });
     }

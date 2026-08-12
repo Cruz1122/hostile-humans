@@ -56,6 +56,10 @@ public class Config {
     public static ForgeConfigSpec.BooleanValue allowBridgeOverLava;
     public static ForgeConfigSpec.BooleanValue allowMiningWithoutCorrectTool;
     public static ForgeConfigSpec.DoubleValue miningSpeedMultiplier;
+    public static ForgeConfigSpec.BooleanValue enableChestLooting;
+    public static ForgeConfigSpec.IntValue chestSearchRadius;
+    public static ForgeConfigSpec.IntValue chestSearchIntervalTicks;
+    public static ForgeConfigSpec.IntValue chestRevisitCooldownTicks;
 
     static {
         BUILDER.push("Hostile Humans Settings");
@@ -98,6 +102,17 @@ public class Config {
                 .define("enableProjectileBlocking", true);
         enableShieldBreaking = SERVER_BUILDER.comment("Allow tactical switching to weapons that can disable visible shields")
                 .define("enableShieldBreaking", true);
+        SERVER_BUILDER.pop();
+
+        SERVER_BUILDER.push("chestLooting");
+        enableChestLooting = SERVER_BUILDER.comment("Allow humans to loot visible vanilla chests")
+                .define("enableChestLooting", true);
+        chestSearchRadius = SERVER_BUILDER.comment("Maximum chest search radius in blocks")
+                .defineInRange("chestSearchRadius", 6, 1, 16);
+        chestSearchIntervalTicks = SERVER_BUILDER.comment("Ticks between chest searches")
+                .defineInRange("chestSearchIntervalTicks", 60, 20, 600);
+        chestRevisitCooldownTicks = SERVER_BUILDER.comment("Ticks before revisiting the last looted chest")
+                .defineInRange("chestRevisitCooldownTicks", 900, 100, 24000);
         SERVER_BUILDER.pop();
 
         SERVER_BUILDER.push("worldNavigation");

@@ -128,6 +128,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     public int cobwebCooldown;
     public int cobwebsPlacedThisCombat;
     private boolean equipmentDirty = true;
+    private boolean equipmentReevaluationQueued;
     private boolean evaluatingEquipment;
     private int shieldDisablerSwapSlot = -1;
     private int shieldDisablerRestoreDeadline;
@@ -310,6 +311,9 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     // Chest
     public int lookForChestCooldown;
+    @Nullable
+    public BlockPos lastLootedChestPos;
+    public long lastLootedChestTick = Long.MIN_VALUE;
     // Food
     public HumanFood food = new HumanFood();
     public int healCooldown;
@@ -442,6 +446,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         goalSelector.addGoal(0, new InvestigateSoundGoal(this, 1.0F));
         goalSelector.addGoal(1, new PotionRangedAttackGoal(this, 1.0, 10, 10));
         goalSelector.addGoal(3, new RaiseShieldGoal(this));
+        goalSelector.addGoal(7, new ChestLootGoal(this, 0.8D));
         goalSelector.addGoal(-30, new LookForBedGoal(this, 1.0F));
         if ((this.getType() == ROAMER.get())) {
             goalSelector.addGoal(8, new RandomStrollGoalFar(this, 0.65D, 15, false));
@@ -657,6 +662,12 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         compound.putInt("InvestigateSoundZ", this.investigateSound.getZ());
         compound.putInt("CobwebCooldown", this.cobwebCooldown);
         compound.putInt("CobwebsPlacedThisCombat", this.cobwebsPlacedThisCombat);
+        if (this.lastLootedChestPos != null) {
+            compound.putInt("LastLootedChestX", this.lastLootedChestPos.getX());
+            compound.putInt("LastLootedChestY", this.lastLootedChestPos.getY());
+            compound.putInt("LastLootedChestZ", this.lastLootedChestPos.getZ());
+            compound.putLong("LastLootedChestTick", this.lastLootedChestTick);
+        }
         if (this.combatSkillTierOverride != null) compound.putInt("CombatSkillTier", this.combatSkillTierOverride.ordinal() + 1);
     }
 
@@ -669,6 +680,10 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
                 compound.getInt("InvestigateSoundZ"));
         this.cobwebCooldown = Math.max(0, compound.getInt("CobwebCooldown"));
         this.cobwebsPlacedThisCombat = Math.max(0, compound.getInt("CobwebsPlacedThisCombat"));
+        if (compound.contains("LastLootedChestTick")) {
+            this.lastLootedChestPos = new BlockPos(compound.getInt("LastLootedChestX"), compound.getInt("LastLootedChestY"), compound.getInt("LastLootedChestZ"));
+            this.lastLootedChestTick = compound.getLong("LastLootedChestTick");
+        }
         int savedCombatTier = compound.getInt("CombatSkillTier");
         this.combatSkillTierOverride = savedCombatTier >= 1 && savedCombatTier <= CombatSkillTier.values().length
                 ? CombatSkillTier.values()[savedCombatTier - 1] : null;
@@ -997,6 +1012,10 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             }
         }
         super.tick();
+        if (this.equipmentReevaluationQueued) {
+            this.equipmentReevaluationQueued = false;
+            this.reevaluateEquipment();
+        }
         sanityClearPendingDrinkItem();
         if (this.lookForChestCooldown > 0) this.lookForChestCooldown--;
         if (!this.level().isClientSide && this.isSleepingOrLyingDown()) {
@@ -1418,6 +1437,11 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     public void markEquipmentDirty() {
         this.equipmentDirty = true;
+    }
+
+    /** Defers selector goal mutation until after the current AI goal tick. */
+    public void queueEquipmentReevaluation() {
+        this.equipmentReevaluationQueued = true;
     }
 
     public void reevaluateEquipment() {

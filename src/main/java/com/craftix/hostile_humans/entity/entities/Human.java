@@ -129,6 +129,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     public int cobwebsPlacedThisCombat;
     private boolean equipmentDirty = true;
     private boolean equipmentReevaluationQueued;
+    private boolean usefulInventoryEquipmentQueued;
     private boolean evaluatingEquipment;
     private int shieldDisablerSwapSlot = -1;
     private int shieldDisablerRestoreDeadline;
@@ -270,7 +271,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
                 @Nullable Entity sourceEntity,
                 @Nullable Entity projectileOwner,
                 float distance) {
-            if (Human.this.getTarget() == null) {
+            if (Human.this.getTarget() == null && !Human.this.isInvestigatingSound()) {
                 Human.this.setInvestigateSound(sourcePos);
             }
         }
@@ -1012,6 +1013,10 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             }
         }
         super.tick();
+        if (this.usefulInventoryEquipmentQueued) {
+            this.usefulInventoryEquipmentQueued = false;
+            this.equipUsefulInventoryItems();
+        }
         if (this.equipmentReevaluationQueued) {
             this.equipmentReevaluationQueued = false;
             this.reevaluateEquipment();
@@ -1442,6 +1447,15 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     /** Defers selector goal mutation until after the current AI goal tick. */
     public void queueEquipmentReevaluation() {
         this.equipmentReevaluationQueued = true;
+    }
+
+    public void equipUsefulInventoryItems() {
+        if (level().isClientSide || getTarget() != null || getData() == null) return;
+        for (ItemStack stack : getData().getInventoryItems()) equipItemIfPossible(stack);
+    }
+
+    public void queueUsefulInventoryEquipment() {
+        this.usefulInventoryEquipmentQueued = true;
     }
 
     public void reevaluateEquipment() {

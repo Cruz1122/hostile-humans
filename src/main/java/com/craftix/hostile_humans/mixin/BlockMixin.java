@@ -26,7 +26,7 @@ public abstract class BlockMixin {
 	public void useInject(Level pLevel, BlockPos pPos, BlockState pState, Player pPlayer, CallbackInfo ci) {
 		if (!pLevel.isClientSide) {
 			for (Human human : pLevel.getEntitiesOfClass(Human.class, new AABB(pPos).inflate(16.0))) {
-				human.setInvestigateSound(pPos);
+				if (!human.isInvestigatingSound()) human.setInvestigateSound(pPos);
 			}
 		}
 	}
@@ -35,7 +35,7 @@ public abstract class BlockMixin {
 	public void useInject(Level pLevel, BlockPos pPos, BlockState p_49849_, @Nullable LivingEntity entity, ItemStack p_49851_, CallbackInfo ci) {
 		if (entity instanceof ServerPlayer pPlayer) {
 			for (Human human : pLevel.getEntitiesOfClass(Human.class, new AABB(pPos).inflate(16.0))) {
-				human.setInvestigateSound(pPos);
+				if (!human.isInvestigatingSound()) human.setInvestigateSound(pPos);
 			}
 		}
 	}

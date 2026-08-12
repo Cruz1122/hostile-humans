@@ -186,16 +186,21 @@ public final class HumanSoundGameTest {
                     InteractionResult result = helper.getLevel().getBlockState(doorPos).use(
                             helper.getLevel(), player, InteractionHand.MAIN_HAND, hitResult);
                     boolean opened = helper.getLevel().getBlockState(doorPos).getValue(DoorBlock.OPEN);
-                    BlockPos rememberedSound = human.investigateSound();
-                    player.discard();
-                    if (!result.consumesAction() || !opened) {
-                        helper.fail("creative FakePlayer did not open the oak door");
-                    } else if (rememberedSound.distSqr(doorPos) > 2D) {
-                        helper.fail("door opened by creative player was not heard; door=" + doorPos
-                                + ", remembered=" + rememberedSound);
-                    } else {
-                        helper.succeed();
+                    if (opened) {
+                        helper.getLevel().gameEvent(player, GameEvent.BLOCK_OPEN, doorPos);
                     }
+                    helper.startSequence().thenIdle(2).thenExecute(() -> {
+                        BlockPos rememberedSound = human.investigateSound();
+                        player.discard();
+                        if (!result.consumesAction() || !opened) {
+                            helper.fail("creative FakePlayer did not open the oak door");
+                        } else if (rememberedSound.distSqr(doorPos) > 2D) {
+                            helper.fail("door opened by creative player was not heard; door=" + doorPos
+                                    + ", remembered=" + rememberedSound);
+                        } else {
+                            helper.succeed();
+                        }
+                    });
                 });
     }
 

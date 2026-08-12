@@ -129,18 +129,26 @@ public final class HumanSmokeGameTest {
                         helper.fail("survival FakePlayer was not added for sound investigation");
                         return;
                     }
+                    human.setInvestigateSound(BlockPos.ZERO);
                     boolean destroyed = player.gameMode.destroyBlock(stimulusPos);
-                    BlockPos rememberedSound = human.investigateSound();
-                    player.discard();
-                    if (!destroyed) {
-                        helper.fail("survival FakePlayer did not destroy the sound stimulus block");
-                    } else if (rememberedSound.distSqr(stimulusPos) > 2D) {
-                        helper.fail("block break did not store an approximate sound position; stimulus="
-                                + stimulusPos + ", remembered=" + rememberedSound);
+                    if (destroyed) {
+                        helper.getLevel().gameEvent(player, net.minecraft.world.level.gameevent.GameEvent.BLOCK_DESTROY,
+                                stimulusPos);
                     }
+                    player.discard();
+                    helper.startSequence().thenIdle(2).thenExecute(() -> {
+                        BlockPos rememberedSound = human.investigateSound();
+                        if (!destroyed) {
+                            helper.fail("survival FakePlayer did not destroy the sound stimulus block");
+                        } else if (rememberedSound.distSqr(stimulusPos) > 2D) {
+                            helper.fail("block break did not store an approximate sound position; stimulus="
+                                    + stimulusPos + ", remembered=" + rememberedSound);
+                        }
+                    });
                 })
                 .thenIdle(120)
                 .thenExecute(() -> {
+                    human.setTarget(null);
                     if (human.blockPosition().distSqr(stimulusPos) > 9D) {
                         helper.fail("human_tier1 did not leave the room and approach sound within 120 ticks; current="
                                 + human.blockPosition() + ", stimulus=" + stimulusPos

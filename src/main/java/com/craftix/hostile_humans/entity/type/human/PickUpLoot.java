@@ -23,10 +23,8 @@ public class PickUpLoot extends HumanAbility {
         super.tick();
         if (!this.level.isClientSide && ticker++ >= TICK_RATE) {
             List<ItemEntity> itemEntities = this.level.getEntities(EntityType.ITEM,
-                    // Match vanilla Mob pickup reach instead of searching a
-                    // large cube around the block position.
                     humanEntity.getBoundingBox().inflate(1.0D, 0.5D, 1.0D),
-                    entity -> true);
+                    entity -> entity.distanceToSqr(humanEntity) <= 1.01D);
             if (!itemEntities.isEmpty()) {
                 HumanData humanMobData = humanEntity.getData();
                 if (humanMobData != null) {

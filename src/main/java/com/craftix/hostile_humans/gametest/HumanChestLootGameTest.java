@@ -31,7 +31,9 @@ public final class HumanChestLootGameTest {
         ChestLootGoal goal = new ChestLootGoal(human, 0.8D);
         helper.assertTrue(goal.canUse(), "Visible chest was not selected");
         goal.start();
-        helper.startSequence().thenIdle(1).thenExecute(goal::tick).thenIdle(1).thenExecute(() -> {
+        helper.startSequence().thenExecute(goal::tick).thenExecute(() ->
+                helper.assertTrue(chest.getItem(0).is(Items.IRON_SWORD), "Chest was looted instantly"))
+                .thenExecute(() -> tickGoal(goal, 70)).thenExecute(() -> {
             helper.assertTrue(chest.getItem(0).isEmpty(), "Visible chest item remained in chest");
             helper.assertTrue(contains(human, Items.IRON_SWORD), "Useful chest item did not reach human inventory");
             helper.succeed();
@@ -61,15 +63,59 @@ public final class HumanChestLootGameTest {
         chest.setItem(0, new ItemStack(Items.DIAMOND_SWORD));
         chest.setItem(1, new ItemStack(Items.BREAD));
         chest.setItem(2, new ItemStack(Items.IRON_INGOT));
+        chest.setItem(3, new ItemStack(Items.DIAMOND_CHESTPLATE));
+        chest.setItem(4, new ItemStack(Items.TOTEM_OF_UNDYING));
         ChestLootGoal goal = new ChestLootGoal(human, 0.8D);
         helper.assertTrue(goal.canUse(), "Visible chest was not selected");
         goal.start();
-        helper.startSequence().thenIdle(1).thenExecute(goal::tick).thenIdle(1).thenExecute(() -> {
+        helper.startSequence().thenExecute(() -> tickGoal(goal, 90)).thenIdle(1).thenExecute(() -> {
             helper.assertTrue(chest.getItem(0).isEmpty(), "Useful weapon remained in chest");
             helper.assertTrue(chest.getItem(1).isEmpty(), "Useful food remained in chest");
             helper.assertTrue(chest.getItem(2).is(Items.IRON_INGOT), "Unusable item was taken from chest");
+            helper.assertTrue(chest.getItem(3).isEmpty(), "Useful armor remained in chest");
+            helper.assertTrue(chest.getItem(4).isEmpty(), "Useful totem remained in chest");
             helper.assertTrue(contains(human, Items.DIAMOND_SWORD) && contains(human, Items.BREAD),
                     "Useful items did not reach human inventory");
+            helper.assertTrue(human.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.CHEST).is(Items.DIAMOND_CHESTPLATE),
+                    "Looted armor was not equipped immediately");
+            helper.assertTrue(contains(human, Items.TOTEM_OF_UNDYING), "Looted totem was not retained");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "chestLooting", timeoutTicks = 200)
+    public static void netherite_gear_is_taken_and_equipped(GameTestHelper helper) {
+        Human human = createHuman(helper);
+        ChestBlockEntity chest = createChest(helper, new BlockPos(3, 1, 2));
+        chest.setItem(0, new ItemStack(Items.NETHERITE_HELMET));
+        chest.setItem(1, new ItemStack(Items.NETHERITE_CHESTPLATE));
+        chest.setItem(2, new ItemStack(Items.NETHERITE_LEGGINGS));
+        chest.setItem(3, new ItemStack(Items.NETHERITE_BOOTS));
+        chest.setItem(4, new ItemStack(Items.NETHERITE_SWORD));
+        chest.setItem(5, new ItemStack(Items.NETHERITE_AXE));
+        chest.setItem(6, new ItemStack(Items.NETHERITE_PICKAXE));
+        chest.setItem(7, new ItemStack(Items.NETHERITE_SHOVEL));
+        chest.setItem(8, new ItemStack(Items.NETHERITE_HOE));
+        ChestLootGoal goal = new ChestLootGoal(human, 0.8D);
+        helper.assertTrue(goal.canUse(), "Visible chest with netherite gear was not selected");
+        goal.start();
+        helper.startSequence().thenExecute(() -> tickGoal(goal, 130)).thenIdle(1).thenExecute(() -> {
+            for (int slot = 0; slot <= 8; slot++) {
+                helper.assertTrue(chest.getItem(slot).isEmpty(), "Netherite item remained in chest slot " + slot);
+            }
+            helper.assertTrue(human.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.HEAD).is(Items.NETHERITE_HELMET),
+                    "Looted netherite helmet was not equipped");
+            helper.assertTrue(human.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.CHEST).is(Items.NETHERITE_CHESTPLATE),
+                    "Looted netherite chestplate was not equipped");
+            helper.assertTrue(human.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.LEGS).is(Items.NETHERITE_LEGGINGS),
+                    "Looted netherite leggings were not equipped");
+            helper.assertTrue(human.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.FEET).is(Items.NETHERITE_BOOTS),
+                    "Looted netherite boots were not equipped");
+            helper.assertTrue(contains(human, Items.NETHERITE_SWORD), "Looted netherite sword was not retained");
+            helper.assertTrue(contains(human, Items.NETHERITE_AXE), "Looted netherite axe was not retained");
+            helper.assertTrue(contains(human, Items.NETHERITE_PICKAXE), "Looted netherite pickaxe was not retained");
+            helper.assertTrue(contains(human, Items.NETHERITE_SHOVEL), "Looted netherite shovel was not retained");
+            helper.assertTrue(contains(human, Items.NETHERITE_HOE), "Looted netherite hoe was not retained");
             helper.succeed();
         });
     }
@@ -83,7 +129,7 @@ public final class HumanChestLootGameTest {
         ChestLootGoal goal = new ChestLootGoal(human, 0.8D);
         helper.assertTrue(goal.canUse(), "Visible chest was not selected");
         goal.start();
-        helper.startSequence().thenIdle(1).thenExecute(goal::tick).thenIdle(1).thenExecute(() -> {
+        helper.startSequence().thenExecute(() -> tickGoal(goal, 70)).thenExecute(() -> {
             helper.assertTrue(chest.getItem(0).is(Items.IRON_SWORD), "Full inventory deleted the chest item");
             helper.succeed();
         });
@@ -133,6 +179,13 @@ public final class HumanChestLootGameTest {
     }
 
     private static boolean contains(Human human, net.minecraft.world.item.Item item) {
-        return human.getData().getInventoryItems().stream().anyMatch(stack -> stack.is(item));
+        return human.getMainHandItem().is(item)
+                || human.getOffhandItem().is(item)
+                || human.getData().getInventoryItems().stream().anyMatch(stack -> stack.is(item));
+    }
+
+    private static void tickGoal(ChestLootGoal goal, int ticks) {
+        for (int tick = 0; tick < ticks && goal.canContinueToUse(); tick++) goal.tick();
+        goal.stop();
     }
 }

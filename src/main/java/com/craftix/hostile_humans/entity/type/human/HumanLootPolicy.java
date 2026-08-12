@@ -5,6 +5,8 @@ import com.craftix.hostile_humans.entity.ai.action.TacticalTags;
 import com.craftix.hostile_humans.entity.entities.Human;
 import com.craftix.hostile_humans.entity.equipment.MeleeWeaponSelector;
 import net.minecraft.world.item.ArrowItem;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.ProjectileWeaponItem;
@@ -22,6 +24,9 @@ public final class HumanLootPolicy {
                 || HumanUtil.isTrident(stack)
                 || HumanUtil.isShield(stack)) return true;
         if (human.isFood(stack) || stack.is(Items.COBWEB) || stack.getItem() instanceof ArrowItem) return true;
+        EquipmentSlot equipmentSlot = LivingEntity.getEquipmentSlotForItem(stack);
+        if (equipmentSlot.getType() == EquipmentSlot.Type.ARMOR
+                || stack.is(Items.TOTEM_OF_UNDYING)) return true;
         if (stack.getItem() instanceof ProjectileWeaponItem || stack.getItem() instanceof TieredItem) return true;
         if (stack.getItem() instanceof BlockItem) {
             return stack.is(TacticalTags.PILLAR_BLOCKS) || stack.is(TacticalTags.BRIDGE_BLOCKS);

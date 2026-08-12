@@ -37,6 +37,7 @@ public class HumanMobEntityData extends TamableAnimal implements HumansDataSync 
     private static final EntityDataAccessor<Boolean> DATA_IS_CHARGING = SynchedEntityData.defineId(HumanMobEntityData.class, EntityDataSerializers.BOOLEAN);
     private static final EntityDataAccessor<String> DATA_NAME = SynchedEntityData.defineId(HumanMobEntityData.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<String> DATA_VARIANT = SynchedEntityData.defineId(HumanMobEntityData.class, EntityDataSerializers.STRING);
+    private static final EntityDataAccessor<String> DATA_PERSONA_ID = SynchedEntityData.defineId(HumanMobEntityData.class, EntityDataSerializers.STRING);
     private static final EntityDataAccessor<Integer> DATA_TIER = SynchedEntityData.defineId(HumanMobEntityData.class, EntityDataSerializers.INT);
     private static final int DATA_SYNC_TICK = 10;
     public String team = "";
@@ -123,6 +124,14 @@ public class HumanMobEntityData extends TamableAnimal implements HumansDataSync 
 
     public void setVariant(String variant) {
         this.entityData.set(DATA_VARIANT, variant);
+    }
+
+    public String getPersonaId() {
+        return this.entityData.get(DATA_PERSONA_ID);
+    }
+
+    protected void setSyncedPersonaId(String personaId) {
+        this.entityData.set(DATA_PERSONA_ID, personaId);
     }
 
     public HumanTier getTier() {
@@ -226,6 +235,7 @@ public class HumanMobEntityData extends TamableAnimal implements HumansDataSync 
         this.entityData.define(DATA_IS_SLEEPING_THIS_NIGHT, false);
         this.entityData.define(DATA_HAS_DECIDED_ON_SLEEP, false);
         this.entityData.define(DATA_VARIANT, "skin1");
+        this.entityData.define(DATA_PERSONA_ID, "");
         this.entityData.define(DATA_TIER, 1);
         this.entityData.define(DATA_SIT_POS, new BlockPos(0, 0, 0));
         this.entityData.define(DATA_HOME_POS, new BlockPos(0, 0, 0));
@@ -236,6 +246,7 @@ public class HumanMobEntityData extends TamableAnimal implements HumansDataSync 
         super.addAdditionalSaveData(compoundTag);
 
         compoundTag.putString("Variant", this.getVariant());
+        if (!this.getPersonaId().isEmpty()) compoundTag.putString("PersonaId", this.getPersonaId());
 
         compoundTag.putInt("SitPosX", this.getSitPos().getX());
         compoundTag.putInt("SitPosY", this.getSitPos().getY());
@@ -282,6 +293,7 @@ public class HumanMobEntityData extends TamableAnimal implements HumansDataSync 
         entityData.set(DATA_HOME_POS, new BlockPos(i1, j1, k1));
 
         setVariant(compoundTag.getString("Variant"));
+        setSyncedPersonaId(compoundTag.getString("PersonaId"));
     }
 
     @Override

@@ -136,7 +136,7 @@ public class EventHandler {
             }
         }
         if (entity instanceof Human human) {
-            if (ModList.get().isLoaded("villagernames")) {
+            if (human.getPersonaId().isEmpty() && ModList.get().isLoaded("villagernames")) {
                 CollectiveVillagerNames.nameEntity(human);
             }
         }

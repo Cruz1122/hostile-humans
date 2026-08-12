@@ -14,10 +14,14 @@ import com.craftix.hostile_humans.entity.ai.combat.CombatIntent;
 import com.craftix.hostile_humans.entity.ai.combat.CombatSkillTier;
 import com.craftix.hostile_humans.entity.ai.combat.CombatTacticsController;
 import com.craftix.hostile_humans.entity.equipment.MeleeWeaponSelector;
+import com.craftix.hostile_humans.persona.ActivePersonaSavedData;
+import com.craftix.hostile_humans.persona.PersonaDefinition;
+import com.craftix.hostile_humans.persona.PersonaRegistry;
 import com.google.common.collect.Maps;
 import net.minecraft.Util;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -78,6 +82,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Optional;
 import java.util.function.BiConsumer;
 import java.util.function.Predicate;
 
@@ -140,6 +145,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     private CombatIntent combatIntent = CombatIntent.idle(com.craftix.hostile_humans.entity.ai.combat.ShieldState.UNAVAILABLE);
     @Nullable
     private CombatSkillTier combatSkillTierOverride;
+    private boolean personaReservationReleased;
 
     public int onPlayerJumpCoolDown;
     public int eatingColldown;
@@ -505,6 +511,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         if (this.isSleepingOrLyingDown()) {
             return false;
         }
+        if (entityIn instanceof LivingEntity livingEntity && !this.canAttack(livingEntity)) return false;
 
         // Keep melee attacks from being deterministic. Higher skill tiers are
         // more reliable, but every tier can still miss occasionally.
@@ -579,6 +586,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         setRandomVariant(variants);
 
         setCanPickUpLoot(true);
+        if (serverLevelAccessor instanceof ServerLevel serverLevel) assignRandomPersona(serverLevel);
         return spawnGroupData;
     }
 
@@ -676,7 +684,12 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     @Override
     public void readAdditionalSaveData(CompoundTag compound) {
+        String previouslyAssignedPersona = getPersonaId();
         super.readAdditionalSaveData(compound);
+        if (!previouslyAssignedPersona.isEmpty() && !previouslyAssignedPersona.equals(getPersonaId())
+                && this.level() instanceof ServerLevel serverLevel) {
+            ActivePersonaSavedData.get(serverLevel).release(previouslyAssignedPersona, getUUID());
+        }
         this.investigateSound = new BlockPos(
                 compound.getInt("InvestigateSoundX"),
                 compound.getInt("InvestigateSoundY"),
@@ -691,6 +704,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         this.combatSkillTierOverride = savedCombatTier >= 1 && savedCombatTier <= CombatSkillTier.values().length
                 ? CombatSkillTier.values()[savedCombatTier - 1] : null;
         this.equipmentDirty = true;
+        restorePersonaReservation();
         setCombatTask();
     }
 
@@ -701,7 +715,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         }
 
         if (entity instanceof Human otherHuman && otherHuman.isAlive()) {
-            return !this.team.equals(otherHuman.team);
+            return areEnemies(this, otherHuman);
         }
 
         return super.canAttack(entity);
@@ -709,7 +723,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     public boolean isAngryAt(LivingEntity entity) {
         if (entity instanceof Human otherHuman && otherHuman.isAlive()) {
-            return !this.team.equals(otherHuman.team);
+            return areEnemies(this, otherHuman);
         }
 
         if (!this.canAttack(entity)) {
@@ -728,6 +742,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     @Override
     public void setTarget(@Nullable LivingEntity livingEntity) {
+        if (livingEntity instanceof Human otherHuman && areAllies(this, otherHuman)) livingEntity = null;
         if (!this.level().isClientSide && livingEntity != null && (this.isSleepingOrLyingDown() || this.healingAfterFleeTicks > 0)) {
             livingEntity = null;
         }
@@ -759,6 +774,113 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     @Override
     protected void defineSynchedData() {
         super.defineSynchedData();
+    }
+
+    @Override
+    public boolean isAlliedTo(Entity entity) {
+        if (entity instanceof Human otherHuman && areAllies(this, otherHuman)) return true;
+        return super.isAlliedTo(entity);
+    }
+
+    public Optional<PersonaDefinition> getPersonaDefinition() {
+        return PersonaRegistry.get().find(getPersonaId());
+    }
+
+    public boolean setPersonaId(String personaId) {
+        if (this.level().isClientSide || !(this.level() instanceof ServerLevel serverLevel)) return false;
+        Optional<PersonaDefinition> definition = PersonaRegistry.get().find(personaId);
+        if (definition.isEmpty()) {
+            HostileHumans.LOGGER.warn("Unknown persona ID {} for human {}", personaId, getUUID());
+            return false;
+        }
+
+        String previousId = getPersonaId();
+        ActivePersonaSavedData reservations = ActivePersonaSavedData.get(serverLevel);
+        if (!reservations.tryReserve(personaId, getUUID())) return false;
+        if (!previousId.isEmpty() && !previousId.equals(personaId)) reservations.release(previousId, getUUID());
+        setSyncedPersonaId(personaId);
+        personaReservationReleased = false;
+        applyPersona(definition.get());
+        return true;
+    }
+
+    public static boolean areAllies(Human first, Human second) {
+        Optional<PersonaDefinition> firstPersona = first.getPersonaDefinition();
+        Optional<PersonaDefinition> secondPersona = second.getPersonaDefinition();
+        if (firstPersona.isPresent() && secondPersona.isPresent()) {
+            return firstPersona.get().faction().isAlliedWith(secondPersona.get().faction());
+        }
+        return first.team.equals(second.team);
+    }
+
+    public static boolean areEnemies(Human first, Human second) {
+        return !areAllies(first, second);
+    }
+
+    public boolean assignRandomPersona() {
+        if (!(level() instanceof ServerLevel serverLevel)) return false;
+        return assignRandomPersona(serverLevel);
+    }
+
+    private boolean assignRandomPersona(ServerLevel serverLevel) {
+        if (!getPersonaId().isEmpty()) {
+            restorePersonaReservation();
+            return !getPersonaId().isEmpty();
+        }
+        CombatSkillTier tier = getCombatTacticsController().skillTier();
+        List<PersonaDefinition> candidates = PersonaRegistry.get().forTier(tier);
+        if (candidates.isEmpty()) {
+            PersonaRegistry.get().warnPoolExhausted(tier);
+            return false;
+        }
+        int start = random.nextInt(candidates.size());
+        for (int offset = 0; offset < candidates.size(); offset++) {
+            PersonaDefinition candidate = candidates.get((start + offset) % candidates.size());
+            if (setPersonaId(candidate.id())) return true;
+        }
+        PersonaRegistry.get().warnPoolExhausted(tier);
+        return false;
+    }
+
+    private void restorePersonaReservation() {
+        if (this.level().isClientSide || !(this.level() instanceof ServerLevel serverLevel) || getPersonaId().isEmpty()) return;
+        Optional<PersonaDefinition> definition = getPersonaDefinition();
+        if (definition.isEmpty()) {
+            HostileHumans.LOGGER.warn("Persona ID {} no longer exists; human {} will use generic fallback", getPersonaId(), getUUID());
+            return;
+        }
+        if (ActivePersonaSavedData.get(serverLevel).tryReserve(getPersonaId(), getUUID())) {
+            personaReservationReleased = false;
+            applyPersona(definition.get());
+        } else {
+            HostileHumans.LOGGER.warn("Persona {} is already reserved; human {} will use generic fallback", getPersonaId(), getUUID());
+            setSyncedPersonaId("");
+        }
+    }
+
+    private void applyPersona(PersonaDefinition definition) {
+        setCustomName(Component.literal(definition.displayName()));
+        setCustomNameVisible(true);
+    }
+
+    @Override
+    public void remove(RemovalReason reason) {
+        if (reason.shouldDestroy()) releasePersonaReservation();
+        super.remove(reason);
+    }
+
+    @Override
+    public void kill() {
+        releasePersonaReservation();
+        super.kill();
+    }
+
+    private void releasePersonaReservation() {
+        if (!personaReservationReleased && !this.level().isClientSide
+                && this.level() instanceof ServerLevel serverLevel && !getPersonaId().isEmpty()) {
+            ActivePersonaSavedData.get(serverLevel).release(getPersonaId(), getUUID());
+            personaReservationReleased = true;
+        }
     }
 
     public void setBanner(ItemStack banner) {

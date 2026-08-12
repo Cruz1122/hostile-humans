@@ -44,7 +44,7 @@ public class HumanRenderer extends HumanoidMobRenderer<Human, PlayerModel<Human>
     @Nullable
     @Override
     protected RenderType getRenderType(Human p_115322_, boolean p_115323_, boolean p_115324_, boolean p_115325_) {
-        return RenderType.entityTranslucent(p_115322_.getResourceLocation());
+        return RenderType.entityTranslucent(getTextureLocation(p_115322_));
     }
 
     @Override
@@ -98,7 +98,10 @@ public class HumanRenderer extends HumanoidMobRenderer<Human, PlayerModel<Human>
 
     @Override
     public @NotNull ResourceLocation getTextureLocation(Human entity) {
-        return entity.getResourceLocation();
+        ResourceLocation fallback = entity.getResourceLocation();
+        return entity.getPersonaDefinition()
+                .map(persona -> PersonaSkinCache.getOrRequest(persona, fallback))
+                .orElse(fallback);
     }
 
     @Override

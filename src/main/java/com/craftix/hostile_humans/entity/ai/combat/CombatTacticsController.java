@@ -13,7 +13,6 @@ public final class CombatTacticsController {
     private static final double MELEE_THREAT_DISTANCE = 4.5D;
 
     private final Human human;
-    private final CombatSkillTier defaultSkillTier;
 
     private ShieldState shieldState = ShieldState.UNAVAILABLE;
     private int reactionUntil = -1;
@@ -31,7 +30,6 @@ public final class CombatTacticsController {
 
     public CombatTacticsController(Human human) {
         this.human = human;
-        this.defaultSkillTier = CombatSkillTier.forHuman(human.getTier(), human.getUUID().hashCode());
     }
 
     public CombatIntent evaluate() {
@@ -255,8 +253,12 @@ public final class CombatTacticsController {
     public CombatIntent intent() { return intent; }
     public ShieldState shieldState() { return shieldState; }
     public CombatSkillTier skillTier() {
+        if (human.getPersonaDefinition().isPresent()) {
+            return human.getPersonaDefinition().get().combatSkillTier();
+        }
         return human.getCombatSkillTierOverride() == null
-                ? defaultSkillTier : human.getCombatSkillTierOverride();
+                ? CombatSkillTier.forHuman(human.getTier(), human.getUUID().hashCode())
+                : human.getCombatSkillTierOverride();
     }
     public boolean visibleDisabler() { return visibleDisabler; }
     public boolean targetBlocking() { return targetBlocking; }

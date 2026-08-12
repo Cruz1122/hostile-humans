@@ -19,11 +19,13 @@ public final class MiningToolSelector {
                 .thenComparingInt(ItemStack::getDamageValue);
         java.util.stream.Stream<ItemStack> inventory = human.getData() == null
                 ? java.util.stream.Stream.empty() : human.getData().getInventoryItems().stream();
-        return java.util.stream.Stream.concat(java.util.stream.Stream.of(human.getMainHandItem()), inventory)
+        Optional<ItemStack> selected = java.util.stream.Stream.concat(java.util.stream.Stream.of(human.getMainHandItem()), inventory)
                 .filter(stack -> !stack.isEmpty() && (stack.getMaxDamage() == 0 || stack.getDamageValue() < stack.getMaxDamage() - 1))
                 .sorted(order).findFirst()
                 .filter(stack -> Config.allowMiningWithoutCorrectTool.get() || stack.isCorrectToolForDrops(state)
                         || !state.requiresCorrectToolForDrops());
+        if (selected.isPresent()) return selected;
+        return !state.requiresCorrectToolForDrops() ? Optional.of(human.getMainHandItem()) : Optional.empty();
     }
 
     public static boolean equip(Human human, ItemStack selected) {

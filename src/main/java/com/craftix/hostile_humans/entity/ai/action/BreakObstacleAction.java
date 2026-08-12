@@ -13,12 +13,12 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.Optional;
+import com.craftix.hostile_humans.entity.ai.survival.ProgressiveBlockBreaker;
 
 public final class BreakObstacleAction implements TacticalWorldAction {
     private BlockPos targetBlockPos;
     private BlockState targetState;
-    private float progress;
-    private int lastCrackStage = -1;
+    private ProgressiveBlockBreaker breaker;
     private int broken;
 
     public static boolean tryBreak(Human human) {
@@ -69,40 +69,24 @@ public final class BreakObstacleAction implements TacticalWorldAction {
         Human human = context.human();
         if (!canStart(context)) return WorldActionResult.FAILED;
         if (!human.level().getBlockState(targetBlockPos).equals(targetState)) return abort(human);
-        Optional<ItemStack> selected = MiningToolSelector.select(human, targetState);
-        if (selected.isEmpty() || !MiningToolSelector.equip(human, selected.get())) return abort(human);
-        ItemStack tool = human.getMainHandItem();
-        boolean correct = tool.isCorrectToolForDrops(targetState);
-        progress += MiningSpeedCalculator.progressPerTick(human, targetState, targetBlockPos, tool, correct);
-        int stage = Math.min(9, (int) (progress * 10.0F));
-        if (stage != lastCrackStage) {
-            human.level().destroyBlockProgress(human.getId(), targetBlockPos, stage);
-            lastCrackStage = stage;
-        }
-        if (progress < 1.0F) return WorldActionResult.RUNNING;
-        human.level().destroyBlockProgress(human.getId(), targetBlockPos, -1);
-        BlockEntity blockEntity = human.level().getBlockEntity(targetBlockPos);
-        ItemStack lootTool = tool.copy();
-        tool.getItem().mineBlock(tool, human.level(), targetState, targetBlockPos, human);
-        if (!human.level().destroyBlock(targetBlockPos, false, human, Block.UPDATE_LIMIT)) return abort(human);
-        if (human.level() instanceof ServerLevel serverLevel && correct) {
-            Block.dropResources(targetState, serverLevel, targetBlockPos, blockEntity, human, lootTool);
-        }
+        if (breaker == null) breaker = new ProgressiveBlockBreaker(human, targetBlockPos, false,
+                !Config.allowMiningWithoutCorrectTool.get());
+        WorldActionResult result = breaker.tick();
+        if (result == WorldActionResult.RUNNING) return result;
+        if (result != WorldActionResult.SUCCESS) return abort(human);
         broken++;
         targetBlockPos = null;
         targetState = null;
-        progress = 0.0F;
-        lastCrackStage = -1;
+        breaker = null;
         human.getNavigation().recomputePath();
         return WorldActionResult.SUCCESS;
     }
 
     private WorldActionResult abort(Human human) {
-        if (targetBlockPos != null) human.level().destroyBlockProgress(human.getId(), targetBlockPos, -1);
+        if (breaker != null) breaker.abort();
         targetBlockPos = null;
         targetState = null;
-        progress = 0.0F;
-        lastCrackStage = -1;
+        breaker = null;
         return WorldActionResult.ABORTED;
     }
 

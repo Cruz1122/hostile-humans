@@ -15,6 +15,8 @@ import com.craftix.hostile_humans.entity.ai.combat.CombatSkillTier;
 import com.craftix.hostile_humans.entity.ai.combat.CombatTacticsController;
 import com.craftix.hostile_humans.entity.ai.squad.SquadAlertReason;
 import com.craftix.hostile_humans.entity.ai.squad.SquadManager;
+import com.craftix.hostile_humans.entity.ai.survival.SurvivalClaimManager;
+import com.craftix.hostile_humans.entity.ai.survival.SurvivalProgressionGoal;
 import com.craftix.hostile_humans.entity.equipment.MeleeWeaponSelector;
 import com.craftix.hostile_humans.persona.ActivePersonaSavedData;
 import com.craftix.hostile_humans.persona.PersonaDefinition;
@@ -478,6 +480,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         goalSelector.addGoal(1, new PotionRangedAttackGoal(this, 1.0, 10, 10));
         goalSelector.addGoal(3, new RaiseShieldGoal(this));
         goalSelector.addGoal(-1, new ItemLootGoal(this, 1.0D));
+        goalSelector.addGoal(5, new SurvivalProgressionGoal(this));
         goalSelector.addGoal(7, new ChestLootGoal(this, 0.8D));
         goalSelector.addGoal(8, new SquadCohesionGoal(this, 0.8D));
         goalSelector.addGoal(-30, new LookForBedGoal(this, 1.0F));
@@ -953,12 +956,14 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     @Override
     public void remove(RemovalReason reason) {
+        SurvivalClaimManager.releaseAll(this);
         if (reason.shouldDestroy()) releasePersonaReservation();
         super.remove(reason);
     }
 
     @Override
     public void kill() {
+        SurvivalClaimManager.releaseAll(this);
         releasePersonaReservation();
         super.kill();
     }

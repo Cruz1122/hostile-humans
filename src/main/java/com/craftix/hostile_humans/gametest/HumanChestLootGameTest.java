@@ -71,7 +71,7 @@ public final class HumanChestLootGameTest {
         helper.startSequence().thenExecute(() -> tickGoal(goal, 90)).thenIdle(1).thenExecute(() -> {
             helper.assertTrue(chest.getItem(0).isEmpty(), "Useful weapon remained in chest");
             helper.assertTrue(chest.getItem(1).isEmpty(), "Useful food remained in chest");
-            helper.assertTrue(chest.getItem(2).is(Items.IRON_INGOT), "Unusable item was taken from chest");
+            helper.assertTrue(chest.getItem(2).isEmpty(), "Progression material remained in chest");
             helper.assertTrue(chest.getItem(3).isEmpty(), "Useful armor remained in chest");
             helper.assertTrue(chest.getItem(4).isEmpty(), "Useful totem remained in chest");
             helper.assertTrue(contains(human, Items.DIAMOND_SWORD) && contains(human, Items.BREAD),

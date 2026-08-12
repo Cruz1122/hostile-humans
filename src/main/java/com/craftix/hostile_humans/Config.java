@@ -60,6 +60,10 @@ public class Config {
     public static ForgeConfigSpec.IntValue chestSearchRadius;
     public static ForgeConfigSpec.IntValue chestSearchIntervalTicks;
     public static ForgeConfigSpec.IntValue chestRevisitCooldownTicks;
+    public static ForgeConfigSpec.BooleanValue enableSurvivalProgression;
+    public static ForgeConfigSpec.IntValue resourceScanRadius;
+    public static ForgeConfigSpec.IntValue needsEvaluationIntervalTicks;
+    public static ForgeConfigSpec.IntValue explorationRadius;
 
     static {
         BUILDER.push("Hostile Humans Settings");
@@ -130,6 +134,17 @@ public class Config {
         allowBridgeOverLava = SERVER_BUILDER.define("allowBridgeOverLava", false);
         allowMiningWithoutCorrectTool = SERVER_BUILDER.define("allowMiningWithoutCorrectTool", false);
         miningSpeedMultiplier = SERVER_BUILDER.defineInRange("miningSpeedMultiplier", 1.0D, 0.1D, 5.0D);
+        SERVER_BUILDER.pop();
+
+        SERVER_BUILDER.push("survivalProgression");
+        enableSurvivalProgression = SERVER_BUILDER.comment("Allow needs-driven squad survival progression")
+                .define("enableSurvivalProgression", true);
+        resourceScanRadius = SERVER_BUILDER.comment("Maximum local radius for exposed resource searches")
+                .defineInRange("resourceScanRadius", 12, 4, 24);
+        needsEvaluationIntervalTicks = SERVER_BUILDER.comment("Ticks between squad-needs evaluations")
+                .defineInRange("needsEvaluationIntervalTicks", 60, 40, 200);
+        explorationRadius = SERVER_BUILDER.comment("Maximum radius for local progression exploration")
+                .defineInRange("explorationRadius", 48, 12, 96);
         SERVER_BUILDER.pop();
 
         BUILDER.pop();

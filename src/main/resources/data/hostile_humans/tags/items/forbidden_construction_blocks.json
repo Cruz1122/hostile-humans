@@ -1,0 +1,4 @@
+{
+  "replace": false,
+  "values": ["minecraft:sand", "minecraft:gravel", "minecraft:anvil", "minecraft:tnt", "minecraft:chest", "minecraft:barrel", "#minecraft:shulker_boxes", "#minecraft:beds", "#minecraft:doors", "#minecraft:trapdoors", "#minecraft:redstone_components", "minecraft:water", "minecraft:lava", "minecraft:torch"]
+}

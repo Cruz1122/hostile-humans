@@ -9,6 +9,7 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
@@ -109,6 +110,31 @@ public final class HumanEquipmentGameTest {
         helper.assertTrue(human.getData().getInventoryItem(20).getCount() == 64, "Existing stack did not fill to its limit");
         helper.assertTrue(incoming.getCount() == 4, "Unaccepted item remainder was not preserved");
         helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalEquipment", timeoutTicks = 40)
+    public static void pickupUsesVanillaMobReach(GameTestHelper helper) {
+        Human human = createHuman(helper, new BlockPos(2, 1, 2));
+        ItemEntity near = new ItemEntity(helper.getLevel(),
+                helper.absolutePos(new BlockPos(3, 1, 2)).getX(),
+                helper.absolutePos(new BlockPos(3, 1, 2)).getY(),
+                helper.absolutePos(new BlockPos(3, 1, 2)).getZ(),
+                new ItemStack(Items.COBBLESTONE));
+        ItemEntity far = new ItemEntity(helper.getLevel(),
+                helper.absolutePos(new BlockPos(4, 1, 2)).getX(),
+                helper.absolutePos(new BlockPos(4, 1, 2)).getY(),
+                helper.absolutePos(new BlockPos(4, 1, 2)).getZ(),
+                new ItemStack(Items.COBBLESTONE));
+        near.setPickUpDelay(0);
+        far.setPickUpDelay(0);
+        helper.getLevel().addFreshEntity(near);
+        helper.getLevel().addFreshEntity(far);
+
+        helper.startSequence().thenIdle(5).thenExecute(() -> {
+            helper.assertTrue(near.isRemoved(), "Nearby loot was not picked up");
+            helper.assertTrue(far.isAlive(), "Loot outside vanilla mob reach was pulled in");
+            helper.succeed();
+        });
     }
 
     private static Human createHuman(GameTestHelper helper, BlockPos localPos) {

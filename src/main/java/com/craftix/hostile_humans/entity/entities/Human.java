@@ -8,6 +8,7 @@ import com.craftix.hostile_humans.entity.PotionRangedAttackMob;
 import com.craftix.hostile_humans.entity.ai.control.HumanEntityWalkControl;
 import com.craftix.hostile_humans.entity.ai.goal.*;
 import com.craftix.hostile_humans.entity.ai.action.PlaceCobwebAction;
+import com.craftix.hostile_humans.entity.ai.action.TacticalWorldActionController;
 import com.craftix.hostile_humans.entity.ai.combat.CombatAction;
 import com.craftix.hostile_humans.entity.ai.combat.CombatIntent;
 import com.craftix.hostile_humans.entity.ai.combat.CombatSkillTier;
@@ -133,6 +134,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     @Nullable
     private UUID shieldDisablerTarget;
     private final CombatTacticsController combatTacticsController = new CombatTacticsController(this);
+    private final TacticalWorldActionController tacticalWorldActionController = new TacticalWorldActionController(this);
     private CombatIntent combatIntent = CombatIntent.idle(com.craftix.hostile_humans.entity.ai.combat.ShieldState.UNAVAILABLE);
     @Nullable
     private CombatSkillTier combatSkillTierOverride;
@@ -493,6 +495,15 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     @Override
     public boolean doHurtTarget(Entity entityIn) {
         if (this.isSleepingOrLyingDown()) {
+            return false;
+        }
+
+        // Keep melee attacks from being deterministic. Higher skill tiers are
+        // more reliable, but every tier can still miss occasionally.
+        if (this.random.nextFloat() >= this.getCombatTacticsController().skillTier().attackAccuracy()) {
+            this.resetFallDistance();
+            this.swing(InteractionHand.MAIN_HAND);
+            this.criticalStrikeReady = false;
             return false;
         }
 
@@ -1005,6 +1016,9 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             this.setTarget(null);
             this.getNavigation().stop();
         }
+        if (!this.level().isClientSide) {
+            this.tacticalWorldActionController.tick();
+        }
         if (this.getTarget() != null) {
             ticksOutOfCombat = 0;
         } else {
@@ -1430,6 +1444,10 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     public CombatTacticsController getCombatTacticsController() {
         return this.combatTacticsController;
+    }
+
+    public TacticalWorldActionController getTacticalWorldActionController() {
+        return tacticalWorldActionController;
     }
 
     @Nullable

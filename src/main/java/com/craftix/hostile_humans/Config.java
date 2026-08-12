@@ -42,6 +42,20 @@ public class Config {
     public static ForgeConfigSpec.BooleanValue enableShieldTactics;
     public static ForgeConfigSpec.BooleanValue enableProjectileBlocking;
     public static ForgeConfigSpec.BooleanValue enableShieldBreaking;
+    public static ForgeConfigSpec.BooleanValue enablePillaring;
+    public static ForgeConfigSpec.BooleanValue enableBridging;
+    public static ForgeConfigSpec.BooleanValue enableNavigationMining;
+    public static ForgeConfigSpec.IntValue maxPillarHeight;
+    public static ForgeConfigSpec.IntValue maxPillarBlocksPerPursuit;
+    public static ForgeConfigSpec.IntValue maxBridgeLength;
+    public static ForgeConfigSpec.IntValue maxBlocksPlacedPerPursuit;
+    public static ForgeConfigSpec.IntValue maxBlocksBrokenPerPursuit;
+    public static ForgeConfigSpec.IntValue maxMiningBlocksPerRecovery;
+    public static ForgeConfigSpec.IntValue pillarPlacementCooldownTicks;
+    public static ForgeConfigSpec.IntValue bridgePlacementCooldownTicks;
+    public static ForgeConfigSpec.BooleanValue allowBridgeOverLava;
+    public static ForgeConfigSpec.BooleanValue allowMiningWithoutCorrectTool;
+    public static ForgeConfigSpec.DoubleValue miningSpeedMultiplier;
 
     static {
         BUILDER.push("Hostile Humans Settings");
@@ -84,6 +98,23 @@ public class Config {
                 .define("enableProjectileBlocking", true);
         enableShieldBreaking = SERVER_BUILDER.comment("Allow tactical switching to weapons that can disable visible shields")
                 .define("enableShieldBreaking", true);
+        SERVER_BUILDER.pop();
+
+        SERVER_BUILDER.push("worldNavigation");
+        enablePillaring = SERVER_BUILDER.define("enablePillaring", true);
+        enableBridging = SERVER_BUILDER.define("enableBridging", true);
+        enableNavigationMining = SERVER_BUILDER.define("enableNavigationMining", true);
+        maxPillarHeight = SERVER_BUILDER.defineInRange("maxPillarHeight", 4, 1, 8);
+        maxPillarBlocksPerPursuit = SERVER_BUILDER.defineInRange("maxPillarBlocksPerPursuit", 6, 0, 16);
+        maxBridgeLength = SERVER_BUILDER.defineInRange("maxBridgeLength", 3, 1, 3);
+        maxBlocksPlacedPerPursuit = SERVER_BUILDER.defineInRange("maxBlocksPlacedPerPursuit", 10, 0, 32);
+        maxBlocksBrokenPerPursuit = SERVER_BUILDER.defineInRange("maxBlocksBrokenPerPursuit", 8, 0, 32);
+        maxMiningBlocksPerRecovery = SERVER_BUILDER.defineInRange("maxMiningBlocksPerRecovery", 3, 1, 3);
+        pillarPlacementCooldownTicks = SERVER_BUILDER.defineInRange("pillarPlacementCooldownTicks", 8, 1, 40);
+        bridgePlacementCooldownTicks = SERVER_BUILDER.defineInRange("bridgePlacementCooldownTicks", 8, 1, 40);
+        allowBridgeOverLava = SERVER_BUILDER.define("allowBridgeOverLava", false);
+        allowMiningWithoutCorrectTool = SERVER_BUILDER.define("allowMiningWithoutCorrectTool", false);
+        miningSpeedMultiplier = SERVER_BUILDER.defineInRange("miningSpeedMultiplier", 1.0D, 0.1D, 5.0D);
         SERVER_BUILDER.pop();
 
         BUILDER.pop();

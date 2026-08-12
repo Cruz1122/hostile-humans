@@ -41,6 +41,7 @@ public final class HumanShieldGameTest {
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 40)
     public static void everyCombatTierSupportsAggressiveCombos(GameTestHelper helper) {
+        double previousAccuracy = 1.0D;
         for (CombatSkillTier tier : CombatSkillTier.values()) {
             int cooldownMin = tier.attackCooldownMin(7);
             int cooldownMax = tier.attackCooldownMax(14, cooldownMin);
@@ -48,6 +49,11 @@ public final class HumanShieldGameTest {
                     tier + " did not receive an aggressive combo cooldown");
             helper.assertTrue(cooldownMin <= cooldownMax,
                     tier + " produced an invalid cooldown range");
+            helper.assertTrue(tier.attackAccuracy() > 0.0D && tier.attackAccuracy() < 1.0D,
+                    tier + " must be capable of both hits and misses");
+            helper.assertTrue(tier.attackAccuracy() < previousAccuracy,
+                    tier + " should be less accurate than the previous skill tier");
+            previousAccuracy = tier.attackAccuracy();
         }
         helper.succeed();
     }

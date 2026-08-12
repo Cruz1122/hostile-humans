@@ -13,6 +13,8 @@ import com.craftix.hostile_humans.entity.ai.combat.CombatAction;
 import com.craftix.hostile_humans.entity.ai.combat.CombatIntent;
 import com.craftix.hostile_humans.entity.ai.combat.CombatSkillTier;
 import com.craftix.hostile_humans.entity.ai.combat.CombatTacticsController;
+import com.craftix.hostile_humans.entity.ai.squad.SquadAlertReason;
+import com.craftix.hostile_humans.entity.ai.squad.SquadManager;
 import com.craftix.hostile_humans.entity.equipment.MeleeWeaponSelector;
 import com.craftix.hostile_humans.persona.ActivePersonaSavedData;
 import com.craftix.hostile_humans.persona.PersonaDefinition;
@@ -146,6 +148,18 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     @Nullable
     private CombatSkillTier combatSkillTierOverride;
     private boolean personaReservationReleased;
+    @Nullable
+    private UUID squadId;
+    @Nullable
+    private UUID squadTargetUuid;
+    @Nullable
+    private BlockPos lastKnownSquadTargetPos;
+    private long lastSeenSquadTargetTick = Long.MIN_VALUE;
+    private int squadTargetCommitmentUntilTick;
+    private SquadAlertReason squadTargetReason = SquadAlertReason.SHARED_AGGRO;
+    private boolean applyingSquadTarget;
+    private boolean squadAdoptedTarget;
+    private int nextSquadVisionShareTick;
 
     public int onPlayerJumpCoolDown;
     public int eatingColldown;
@@ -404,7 +418,15 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
                 consecutiveReceivedCombatHits = 1;
             }
             lastReceivedCombatHitTick = tickCount;
-            setTarget(attacker);
+            if (!this.isFleeing && this.healingAfterFleeTicks <= 0) {
+                setTarget(attacker);
+            } else {
+                this.toAvoid = attacker;
+            }
+            if (!this.level().isClientSide) {
+                SquadManager.shareTarget(this, attacker, this.isFleeing
+                        ? SquadAlertReason.PROTECT_RETREATING_ALLY : SquadAlertReason.DIRECT_ATTACKER);
+            }
         }
 
         if (amount > 1) {
@@ -452,10 +474,12 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         goalSelector.addGoal(0, new RunFromTarget(this, 6.0F, 1.0D, 1.2D));
         goalSelector.addGoal(0, new AvoidTNTGoal(this, 6.0F, 1.0D, 1.2D));
         goalSelector.addGoal(0, new InvestigateSoundGoal(this, 1.0F));
+        goalSelector.addGoal(6, new SquadInvestigateGoal(this, 1.0D));
         goalSelector.addGoal(1, new PotionRangedAttackGoal(this, 1.0, 10, 10));
         goalSelector.addGoal(3, new RaiseShieldGoal(this));
         goalSelector.addGoal(-1, new ItemLootGoal(this, 1.0D));
         goalSelector.addGoal(7, new ChestLootGoal(this, 0.8D));
+        goalSelector.addGoal(8, new SquadCohesionGoal(this, 0.8D));
         goalSelector.addGoal(-30, new LookForBedGoal(this, 1.0F));
         if ((this.getType() == ROAMER.get())) {
             goalSelector.addGoal(8, new RandomStrollGoalFar(this, 0.65D, 15, false));
@@ -465,7 +489,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
         goalSelector.addGoal(10, new RandomLookAroundGoal(this));
         goalSelector.addGoal(11, new HumanLookAtPlayerGoal(this, Player.class, 64.0F));
-        targetSelector.addGoal(0, new HurtByTargetGoal(this).setAlertOthers());
+        targetSelector.addGoal(0, new HurtByTargetGoal(this));
         targetSelector.addGoal(2, new NearestAttackableTargetGoalCustom<>(this, LivingEntity.class, 13, true, false,
                 target -> !(target instanceof Player) && this.isAngryAt(target)));
         targetSelector.addGoal(1, new NearestAttackableTargetGoalWithHumanLimiter<>(this, Player.class, true));
@@ -680,6 +704,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             compound.putLong("LastLootedChestTick", this.lastLootedChestTick);
         }
         if (this.combatSkillTierOverride != null) compound.putInt("CombatSkillTier", this.combatSkillTierOverride.ordinal() + 1);
+        if (this.squadId != null) compound.putUUID("SquadId", this.squadId);
     }
 
     @Override
@@ -703,6 +728,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         int savedCombatTier = compound.getInt("CombatSkillTier");
         this.combatSkillTierOverride = savedCombatTier >= 1 && savedCombatTier <= CombatSkillTier.values().length
                 ? CombatSkillTier.values()[savedCombatTier - 1] : null;
+        this.squadId = compound.hasUUID("SquadId") ? compound.getUUID("SquadId") : null;
         this.equipmentDirty = true;
         restorePersonaReservation();
         setCombatTask();
@@ -762,6 +788,68 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             this.queuedPreAttackBuff = false;
             this.resolvedPreAttackBuffThisCombat = false;
         }
+        if (livingEntity == null) this.squadAdoptedTarget = false;
+        if (livingEntity != null && livingEntity != previousTarget && !this.applyingSquadTarget) {
+            this.squadAdoptedTarget = false;
+            this.squadTargetCommitmentUntilTick = this.tickCount + 30;
+            this.squadTargetReason = SquadAlertReason.DIRECT_ATTACKER;
+            // The discoverer keeps a stronger commitment; recipients get lower-priority shared aggro.
+            SquadManager.shareTarget(this, livingEntity, SquadAlertReason.SHARED_AGGRO);
+        }
+    }
+
+    @Nullable
+    public UUID getSquadId() {
+        return squadId;
+    }
+
+    public boolean setSquadId(@Nullable UUID squadId) {
+        if (squadId != null && getPersonaDefinition().isEmpty()) return false;
+        this.squadId = squadId;
+        return true;
+    }
+
+    public void receiveSquadAlert(LivingEntity target, BlockPos lastKnownPos, long seenTick,
+                                  SquadAlertReason reason) {
+        rememberSquadThreat(target.getUUID(), lastKnownPos, seenTick);
+        if (this.isFleeing || this.healingAfterFleeTicks > 0 || this.isUsingItem() || this.isSleepingOrLyingDown()
+                || !this.canAttack(target)) return;
+        LivingEntity current = this.getTarget();
+        boolean committed = current != null && current.isAlive() && this.tickCount < this.squadTargetCommitmentUntilTick;
+        if (committed && reason.priority() <= this.squadTargetReason.priority()) return;
+        this.applyingSquadTarget = true;
+        try {
+            setTarget(target);
+        } finally {
+            this.applyingSquadTarget = false;
+        }
+        if (getTarget() == target) {
+            this.squadAdoptedTarget = true;
+            this.squadTargetReason = reason;
+            this.squadTargetCommitmentUntilTick = this.tickCount + 30;
+        }
+    }
+
+    public void rememberSquadThreat(UUID targetUuid, BlockPos lastKnownPos, long seenTick) {
+        this.squadTargetUuid = targetUuid;
+        this.lastKnownSquadTargetPos = lastKnownPos.immutable();
+        this.lastSeenSquadTargetTick = seenTick;
+    }
+
+    public boolean hasFreshSquadThreatMemory() {
+        return this.squadTargetUuid != null && this.lastKnownSquadTargetPos != null
+                && this.level().getGameTime() - this.lastSeenSquadTargetTick <= SquadManager.MEMORY_TICKS;
+    }
+
+    @Nullable
+    public BlockPos getLastKnownSquadTargetPos() {
+        return hasFreshSquadThreatMemory() ? this.lastKnownSquadTargetPos : null;
+    }
+
+    public void clearSquadThreatMemory() {
+        this.squadTargetUuid = null;
+        this.lastKnownSquadTargetPos = null;
+        this.lastSeenSquadTargetTick = Long.MIN_VALUE;
     }
 
     @Override
@@ -1166,6 +1254,18 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         }
         if (!this.level().isClientSide) {
             this.tacticalWorldActionController.tick();
+            LivingEntity squadTarget = this.getTarget();
+            if (squadTarget != null && this.tickCount >= this.nextSquadVisionShareTick
+                    && this.hasLineOfSight(squadTarget)) {
+                this.nextSquadVisionShareTick = this.tickCount + 20;
+                SquadManager.refreshVisibleTarget(this, squadTarget);
+            }
+            if (this.squadAdoptedTarget && squadTarget != null && !this.hasLineOfSight(squadTarget)
+                    && this.level().getGameTime() - this.lastSeenSquadTargetTick > 40) {
+                this.squadAdoptedTarget = false;
+                setTarget(null);
+            }
+            if (!hasFreshSquadThreatMemory() && this.squadTargetUuid != null) clearSquadThreatMemory();
         }
         if (this.getTarget() != null) {
             ticksOutOfCombat = 0;

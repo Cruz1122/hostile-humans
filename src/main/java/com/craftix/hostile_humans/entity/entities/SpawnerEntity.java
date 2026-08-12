@@ -3,6 +3,7 @@ package com.craftix.hostile_humans.entity.entities;
 import com.craftix.hostile_humans.Config;
 import com.craftix.hostile_humans.HumanUtil;
 import com.craftix.hostile_humans.compat.DungeonMobs;
+import com.craftix.hostile_humans.persona.PersonaFaction;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
@@ -19,6 +20,10 @@ import net.minecraftforge.fml.ModList;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 public class SpawnerEntity extends Mob {
 
@@ -86,11 +91,34 @@ public class SpawnerEntity extends Mob {
             for (var entity : spawnedEntities) {
                 entity.addEffect(new MobEffectInstance(MobEffects.DAMAGE_RESISTANCE, 20 * (entity instanceof Human ? 15 : 10), 255, false, false, false));
             }
+            assignSquads(spawnedEntities);
 
             return true;
         }
 
         return false;
+    }
+
+    private void assignSquads(List<LivingEntity> spawnedEntities) {
+        Map<PersonaFaction, List<Human>> byFaction = new HashMap<>();
+        for (LivingEntity entity : spawnedEntities) {
+            if (entity instanceof Human human) {
+                human.getPersonaDefinition().ifPresent(definition ->
+                        byFaction.computeIfAbsent(definition.faction(), ignored -> new ArrayList<>()).add(human));
+            }
+        }
+        for (List<Human> factionHumans : byFaction.values()) {
+            int index = 0;
+            while (factionHumans.size() - index >= 2) {
+                int remaining = factionHumans.size() - index;
+                int groupSize = Math.min(5, remaining == 6 ? 3 : remaining);
+                if (remaining - groupSize == 1) groupSize--;
+                UUID squadId = UUID.randomUUID();
+                for (int member = 0; member < groupSize; member++) {
+                    factionHumans.get(index++).setSquadId(squadId);
+                }
+            }
+        }
     }
 
     EntityType getRandomPillager() {

@@ -3,6 +3,7 @@ package com.craftix.hostile_humans.entity.ai.goal;
 import com.craftix.hostile_humans.Config;
 import com.craftix.hostile_humans.HumanUtil;
 import com.craftix.hostile_humans.entity.entities.Human;
+import com.craftix.hostile_humans.entity.ai.squad.SquadManager;
 import net.minecraft.world.entity.EntitySelector;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
@@ -113,8 +114,10 @@ public class RunFromTarget extends Goal {
     }
 
     public void start() {
+        LivingEntity attacker = human.toAvoid;
         human.isFleeing = true;
         human.setTarget(null);
+        SquadManager.alertRetreatingAlly(human, attacker);
         this.human.getNavigation().moveTo(this.path, this.walkSpeedModifier);
     }
 

@@ -118,7 +118,7 @@ def main() -> None:
     parser.add_argument(
         "--source",
         type=Path,
-        default=script_dir / "hostile-humans-personas-final.csv",
+        default=script_dir / "hostile-humans-final-persona-dataset.csv",
     )
     parser.add_argument(
         "--output",

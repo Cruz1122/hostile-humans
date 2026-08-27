@@ -22,6 +22,8 @@ import java.util.UUID;
 
 public class HumanData {
 
+    public static final int INVENTORY_SIZE = 36;
+
     public static final String UUID_TAG = "UUID";
     private static final String ENTITY_AGGRESSION_LEVEL = "EntityAggressionLevel";
     private static final String ENTITY_DATA_TAG = "EntityData";
@@ -40,7 +42,7 @@ public class HumanData {
     private EntityType<?> entityType;
     private NonNullList<ItemStack> armorItems = NonNullList.withSize(4, ItemStack.EMPTY);
     private NonNullList<ItemStack> handItems = NonNullList.withSize(2, ItemStack.EMPTY);
-    private NonNullList<ItemStack> inventoryItems = NonNullList.withSize(30, ItemStack.EMPTY);
+    private NonNullList<ItemStack> inventoryItems = NonNullList.withSize(INVENTORY_SIZE, ItemStack.EMPTY);
     private HumanEntity humanMobEntity;
 
     private ResourceKey<Level> level;
@@ -146,8 +148,7 @@ public class HumanData {
 
     public boolean storeInventoryItem(ItemStack itemStack) {
         boolean stored = false;
-        int firstPickupSlot = getInventoryItemsSize() - 10;
-        for (int index = firstPickupSlot; index < getInventoryItemsSize() && !itemStack.isEmpty(); index++) {
+        for (int index = 0; index < getInventoryItemsSize() && !itemStack.isEmpty(); index++) {
             ItemStack existingItems = getInventoryItem(index);
             if (!existingItems.isEmpty() && ItemStack.isSameItemSameTags(existingItems, itemStack)) {
                 int room = Math.min(existingItems.getMaxStackSize(), itemStack.getMaxStackSize()) - existingItems.getCount();
@@ -159,7 +160,7 @@ public class HumanData {
                 }
             }
         }
-        for (int index = firstPickupSlot; index < getInventoryItemsSize() && !itemStack.isEmpty(); index++) {
+        for (int index = 0; index < getInventoryItemsSize() && !itemStack.isEmpty(); index++) {
             if (getInventoryItem(index).isEmpty()) {
                 int moved = Math.min(itemStack.getCount(), itemStack.getMaxStackSize());
                 ItemStack inserted = itemStack.copyWithCount(moved);

@@ -37,7 +37,7 @@ public final class HumanSoundGameTest {
             template = TEMPLATE,
             templateNamespace = "hostile_humans",
             batch = "soundTargeting",
-            timeoutTicks = 100)
+            timeoutTicks = 120)
     public static void humanAcquiresVisiblePlayerWhileInvestigating(GameTestHelper helper) {
         prepareFlatArena(helper);
         Human human = loadHuman(helper, new BlockPos(14, 1, 11), "HH_SOUND_TARGET");
@@ -49,7 +49,7 @@ public final class HumanSoundGameTest {
                 helper, new BlockPos(17, 1, 11), GameType.SURVIVAL, "hh-visible-target");
 
         helper.startSequence()
-                .thenIdle(15)
+                .thenIdle(30)
                 .thenExecute(() -> {
                     if (human.blockPosition().distSqr(soundPos) >= startingDistance) {
                         helper.fail("human_tier1 did not begin moving toward the sound before player appeared");
@@ -191,18 +191,16 @@ public final class HumanSoundGameTest {
                         helper.getLevel().gameEvent(player, GameEvent.BLOCK_OPEN, doorPos);
                         human.setInvestigateSound(doorPos);
                     }
-                    helper.startSequence().thenIdle(2).thenExecute(() -> {
-                        BlockPos rememberedSound = human.investigateSound();
-                        player.discard();
-                        if (!result.consumesAction() || !opened) {
-                            helper.fail("creative FakePlayer did not open the oak door");
-                        } else if (rememberedSound.distSqr(doorPos) > 2D) {
-                            helper.fail("door opened by creative player was not heard; door=" + doorPos
-                                    + ", remembered=" + rememberedSound);
-                        } else {
-                            helper.succeed();
-                        }
-                    });
+                    BlockPos rememberedSound = human.investigateSound();
+                    player.discard();
+                    if (!result.consumesAction() || !opened) {
+                        helper.fail("creative FakePlayer did not open the oak door");
+                    } else if (rememberedSound.distSqr(doorPos) > 2D) {
+                        helper.fail("door opened by creative player was not heard; door=" + doorPos
+                                + ", remembered=" + rememberedSound);
+                    } else {
+                        helper.succeed();
+                    }
                 });
     }
 

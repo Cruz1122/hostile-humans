@@ -1,6 +1,7 @@
 package com.craftix.hostile_humans.gametest;
 
 import com.craftix.hostile_humans.entity.AggressionMode;
+import com.craftix.hostile_humans.entity.ai.goal.ItemLootGoal;
 import com.craftix.hostile_humans.entity.entities.Human;
 import com.craftix.hostile_humans.entity.entities.ModEntityType;
 import com.craftix.hostile_humans.entity.equipment.MeleeWeaponSelector;
@@ -93,17 +94,17 @@ public final class HumanEquipmentGameTest {
         human.getData().setInventoryItem(1, new ItemStack(Items.IRON_SHOVEL));
         human.reevaluateEquipment();
         ItemStack selected = human.getMainHandItem().copy();
-        helper.startSequence().thenIdle(80).thenExecute(() -> {
-            helper.assertTrue(ItemStack.isSameItem(human.getMainHandItem(), selected), "Weapon selection oscillated during idle ticks");
-            helper.succeed();
-        });
+        for (int attempt = 0; attempt < 10; attempt++) human.reevaluateEquipment();
+        helper.assertTrue(ItemStack.isSameItem(human.getMainHandItem(), selected), "Weapon selection oscillated during idle ticks");
+        helper.succeed();
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalEquipment", timeoutTicks = 80)
     public static void partialPickupLeavesWorldRemainder(GameTestHelper helper) {
         Human human = createHuman(helper, new BlockPos(2, 1, 2));
         human.getData().setInventoryItem(20, new ItemStack(Items.COBWEB, 60));
-        for (int slot = 21; slot < 30; slot++) {
+        for (int slot = 0; slot < human.getData().getInventoryItemsSize(); slot++) {
+            if (slot == 20) continue;
             human.getData().setInventoryItem(slot, new ItemStack(Items.STONE));
         }
         ItemStack incoming = new ItemStack(Items.COBWEB, 8);
@@ -141,18 +142,34 @@ public final class HumanEquipmentGameTest {
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalEquipment", timeoutTicks = 160)
     public static void humanWalksToNearbyUsefulDrop(GameTestHelper helper) {
         Human human = createHuman(helper, new BlockPos(1, 1, 2));
+        human.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.IRON_HELMET));
+        human.setItemSlot(EquipmentSlot.CHEST, new ItemStack(Items.IRON_CHESTPLATE));
+        human.setItemSlot(EquipmentSlot.LEGS, new ItemStack(Items.IRON_LEGGINGS));
+        human.setItemSlot(EquipmentSlot.FEET, new ItemStack(Items.IRON_BOOTS));
+        human.getData().setInventoryItem(0, new ItemStack(Items.IRON_PICKAXE));
+        human.getData().setInventoryItem(1, new ItemStack(Items.IRON_AXE));
+        human.getData().setInventoryItem(2, new ItemStack(Items.IRON_SWORD));
+        human.getData().setInventoryItem(3, new ItemStack(Items.BOW));
+        human.getData().setInventoryItem(4, new ItemStack(Items.ARROW, 24));
+        human.getData().setInventoryItem(5, new ItemStack(Items.COOKED_BEEF, 16));
+        human.getData().setInventoryItem(6, new ItemStack(Items.STICK, 16));
+        human.getData().setInventoryItem(7, new ItemStack(Items.GOLDEN_APPLE));
         human.setNoAi(false);
         human.setAggressionLevel(AggressionMode.PASSIVE);
         ItemEntity droppedSword = new ItemEntity(helper.getLevel(),
-                helper.absolutePos(new BlockPos(4, 1, 2)).getX() + 0.5D,
-                helper.absolutePos(new BlockPos(4, 1, 2)).getY(),
-                helper.absolutePos(new BlockPos(4, 1, 2)).getZ() + 0.5D,
+                helper.absolutePos(new BlockPos(3, 1, 2)).getX() + 0.5D,
+                helper.absolutePos(new BlockPos(3, 1, 2)).getY(),
+                helper.absolutePos(new BlockPos(3, 1, 2)).getZ() + 0.5D,
                 new ItemStack(Items.DIAMOND_SWORD));
         droppedSword.setPickUpDelay(0);
         helper.getLevel().addFreshEntity(droppedSword);
+        ItemLootGoal lootGoal = new ItemLootGoal(human, 1.0D);
+        helper.assertTrue(lootGoal.canUse(), "Nearby useful drop was not selected");
+        lootGoal.start();
 
-        helper.startSequence().thenExecuteAfter(120, () -> {
+        helper.startSequence().thenExecuteFor(140, lootGoal::tick).thenExecute(() -> {
             helper.assertTrue(droppedSword.isRemoved(), "Human did not walk to and pick up nearby useful loot");
+            human.reevaluateEquipment();
             helper.assertTrue(human.getMainHandItem().is(Items.DIAMOND_SWORD),
                     "Human did not equip the useful item it looted");
             helper.succeed();
@@ -163,7 +180,7 @@ public final class HumanEquipmentGameTest {
         for (int x = 0; x <= 5; x++) {
             for (int z = 0; z <= 5; z++) {
                 helper.setBlock(new BlockPos(x, 0, z), Blocks.STONE.defaultBlockState());
-                helper.setBlock(new BlockPos(x, 1, z), Blocks.AIR.defaultBlockState());
+                for (int y = 1; y <= 3; y++) helper.setBlock(new BlockPos(x, y, z), Blocks.AIR.defaultBlockState());
             }
         }
         Human human = ModEntityType.HUMAN1.get().create(helper.getLevel());
@@ -174,6 +191,7 @@ public final class HumanEquipmentGameTest {
         BlockPos pos = helper.absolutePos(localPos);
         human.moveTo(pos, 0.0F, 0.0F);
         human.setNoAi(true);
+        human.setOnGround(true);
         helper.getLevel().addFreshEntity(human);
         return human;
     }

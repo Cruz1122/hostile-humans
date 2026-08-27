@@ -110,6 +110,9 @@ public final class HumanSmokeGameTest {
             helper.fail("hostile_humans:human_tier1 could not be loaded from summon NBT");
             return;
         }
+        // Keep the investigation goal from caching an unrelated arena sound
+        // before this test emits its controlled stimulus.
+        human.setNoAi(true);
         human.addTag(DEBUG_TAG);
         if (!helper.getLevel().addFreshEntity(human)) {
             helper.fail("human_tier1 was not added for sound investigation");
@@ -136,16 +139,15 @@ public final class HumanSmokeGameTest {
                                 stimulusPos);
                         human.setInvestigateSound(stimulusPos);
                     }
+                    BlockPos rememberedSound = human.investigateSound();
+                    if (!destroyed) {
+                        helper.fail("survival FakePlayer did not destroy the sound stimulus block");
+                    } else if (rememberedSound.distSqr(stimulusPos) > 2D) {
+                        helper.fail("block break did not store an approximate sound position; stimulus="
+                                + stimulusPos + ", remembered=" + rememberedSound);
+                    }
+                    human.setNoAi(false);
                     player.discard();
-                    helper.startSequence().thenIdle(2).thenExecute(() -> {
-                        BlockPos rememberedSound = human.investigateSound();
-                        if (!destroyed) {
-                            helper.fail("survival FakePlayer did not destroy the sound stimulus block");
-                        } else if (rememberedSound.distSqr(stimulusPos) > 2D) {
-                            helper.fail("block break did not store an approximate sound position; stimulus="
-                                    + stimulusPos + ", remembered=" + rememberedSound);
-                        }
-                    });
                 })
                 .thenIdle(60)
                 .thenExecute(() -> {

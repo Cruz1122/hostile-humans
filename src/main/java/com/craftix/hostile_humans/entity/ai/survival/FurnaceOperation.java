@@ -39,10 +39,14 @@ public final class FurnaceOperation {
         if (input == null) return Result.FAILED;
         ItemStack fuel = findFuel(human).orElse(null);
         if (fuel == null) return Result.FAILED;
-        furnace.setItem(0, input.stack.copyWithCount(1));
-        input.stack.shrink(1);
-        furnace.setItem(1, fuel.copyWithCount(1));
-        fuel.shrink(1);
+        int batch = Math.min(8, input.stack.getCount());
+        int fuelUnits = Math.min(fuel.getCount(), Math.max(1,
+                (batch * 200 + ForgeHooks.getBurnTime(fuel, RecipeType.SMELTING) - 1)
+                        / ForgeHooks.getBurnTime(fuel, RecipeType.SMELTING)));
+        furnace.setItem(0, input.stack.copyWithCount(batch));
+        input.stack.shrink(batch);
+        furnace.setItem(1, fuel.copyWithCount(fuelUnits));
+        fuel.shrink(fuelUnits);
         furnace.setChanged();
         SquadNeedsEvaluator.invalidate(human);
         return Result.INSERTED;

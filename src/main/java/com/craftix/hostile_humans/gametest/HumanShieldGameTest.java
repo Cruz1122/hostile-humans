@@ -229,13 +229,22 @@ public final class HumanShieldGameTest {
         Zombie criticalTarget = createZombie(helper, new BlockPos(4, 1, 2));
         human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
 
-        human.criticalStrikeReady = false;
-        human.doHurtTarget(normalTarget);
-        float normalDamage = normalTarget.getMaxHealth() - normalTarget.getHealth();
-
-        human.criticalStrikeReady = true;
-        human.doHurtTarget(criticalTarget);
-        float criticalDamage = criticalTarget.getMaxHealth() - criticalTarget.getHealth();
+        float normalDamage = 0.0F;
+        for (int attempt = 0; attempt < 40 && normalDamage <= 0.0F; attempt++) {
+            normalTarget.setHealth(normalTarget.getMaxHealth());
+            normalTarget.invulnerableTime = 0;
+            human.criticalStrikeReady = false;
+            human.doHurtTarget(normalTarget);
+            normalDamage = normalTarget.getMaxHealth() - normalTarget.getHealth();
+        }
+        float criticalDamage = 0.0F;
+        for (int attempt = 0; attempt < 40 && criticalDamage <= 0.0F; attempt++) {
+            criticalTarget.setHealth(criticalTarget.getMaxHealth());
+            criticalTarget.invulnerableTime = 0;
+            human.criticalStrikeReady = true;
+            human.doHurtTarget(criticalTarget);
+            criticalDamage = criticalTarget.getMaxHealth() - criticalTarget.getHealth();
+        }
 
         helper.assertTrue(criticalDamage > normalDamage,
                 "Critical strike did not amplify the single melee hit");

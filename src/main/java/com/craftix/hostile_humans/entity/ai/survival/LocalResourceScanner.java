@@ -10,27 +10,73 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
-import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.List;
 import java.util.Optional;
+import java.util.function.Predicate;
 
 /** Bounded loaded-block scan. Candidates must expose a face and have a normal path to an adjacent cell. */
 public final class LocalResourceScanner {
     private LocalResourceScanner() {}
 
     public static Optional<BlockPos> find(Human human, SquadNeed need) {
+        return findFirst(human, List.of(need)).map(ResourceTarget::pos);
+    }
+
+    /** Scans the bounded volume once and returns the nearest resource for the first satisfiable need. */
+    public static Optional<ResourceTarget> findFirst(Human human, List<SquadNeed> needs) {
+        return findFirst(human, needs, pos -> false, false);
+    }
+
+    public static Optional<ResourceTarget> findFirst(Human human, List<SquadNeed> needs, Predicate<BlockPos> ignored) {
+        return findFirst(human, needs, ignored, true);
+    }
+
+    public static Optional<ResourceTarget> findReachableFirst(Human human, List<SquadNeed> needs, Predicate<BlockPos> ignored) {
+        return findFirst(human, needs, ignored, true);
+    }
+
+    private static Optional<ResourceTarget> findFirst(Human human, List<SquadNeed> needs,
+                                                       Predicate<BlockPos> ignored, boolean validatePath) {
+        if (needs.isEmpty()) return Optional.empty();
         int radius = Config.resourceScanRadius.get();
         BlockPos origin = human.blockPosition();
-        return BlockPos.betweenClosedStream(origin.offset(-radius, -Math.min(6, radius), -radius),
-                        origin.offset(radius, Math.min(6, radius), radius))
-                .filter(human.level()::hasChunkAt)
-                .filter(pos -> matches(human.level().getBlockState(pos), need))
-                .filter(pos -> exposed(human, pos))
-                .filter(pos -> !SurvivalClaimManager.resourceClaimedByOther(human, pos))
-                .filter(pos -> toolCanHarvest(human, human.level().getBlockState(pos)))
-                .filter(pos -> interactionPosition(human, pos).isPresent())
-                .map(BlockPos::immutable)
-                .min(Comparator.comparingDouble(pos -> pos.distSqr(origin)));
+        EnumMap<SquadNeed, BlockPos> nearest = new EnumMap<>(SquadNeed.class);
+        EnumMap<SquadNeed, Double> distances = new EnumMap<>(SquadNeed.class);
+        for (BlockPos mutable : BlockPos.betweenClosed(origin.offset(-radius, -Math.min(6, radius), -radius),
+                origin.offset(radius, Math.min(6, radius), radius))) {
+            if (!human.level().hasChunkAt(mutable)) continue;
+            BlockState state = human.level().getBlockState(mutable);
+            SquadNeed matchingNeed = null;
+            for (SquadNeed need : needs) {
+                if (matches(state, need)) {
+                    matchingNeed = need;
+                    break;
+                }
+            }
+            if (matchingNeed == null || ignored.test(mutable) || !exposed(human, mutable)
+                    || SurvivalClaimManager.resourceClaimedByOther(human, mutable)
+                    || !toolCanHarvest(human, state)) continue;
+            double distance = mutable.distSqr(origin);
+            if (distance < distances.getOrDefault(matchingNeed, Double.MAX_VALUE)) {
+                nearest.put(matchingNeed, mutable.immutable());
+                distances.put(matchingNeed, distance);
+            }
+        }
+        for (SquadNeed need : needs) {
+            BlockPos pos = nearest.get(need);
+            if (pos == null) continue;
+            if (!validatePath) return Optional.of(new ResourceTarget(need, pos));
+            Optional<BlockPos> interaction = interactionPosition(human, pos);
+            if (interaction.isEmpty()) continue;
+            if (withinGatherRange(human, pos) || reachable(human, interaction.get())) {
+                return Optional.of(new ResourceTarget(need, pos));
+            }
+        }
+        return Optional.empty();
     }
+
+    public record ResourceTarget(SquadNeed need, BlockPos pos) {}
 
     public static boolean exposed(Human human, BlockPos pos) {
         for (Direction direction : Direction.values()) {
@@ -40,6 +86,15 @@ public final class LocalResourceScanner {
             if (state.isAir() || !state.isCollisionShapeFullBlock(human.level(), adjacent)) return true;
         }
         return false;
+    }
+
+    public static boolean withinGatherRange(Human human, BlockPos resource) {
+        return human.distanceToSqr(resource.getX() + 0.5D, resource.getY() + 0.5D, resource.getZ() + 0.5D) <= 9.0D;
+    }
+
+    private static boolean reachable(Human human, BlockPos interaction) {
+        var path = human.getNavigation().createPath(interaction, 0);
+        return path != null && path.canReach();
     }
 
     public static Optional<BlockPos> interactionPosition(Human human, BlockPos resource) {

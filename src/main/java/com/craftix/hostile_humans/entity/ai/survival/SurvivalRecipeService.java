@@ -10,6 +10,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeType;
+import net.minecraft.world.item.crafting.ShapedRecipe;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -55,15 +56,23 @@ public final class SurvivalRecipeService {
         if (reserved.isEmpty() && nonEmpty > 0) return Optional.empty();
         int inputIndex = 0;
         for (Ingredient ingredient : ingredients) {
-            if (ingredient.isEmpty()) {
-                inputIndex++;
-                continue;
-            }
             Reserved match = reserved.stream().filter(entry -> !entry.used && ingredient.test(entry.stack)).findFirst().orElse(null);
-            if (match == null) return Optional.empty();
-            match.used = true;
-            if (inputIndex >= grid.getContainerSize()) return Optional.empty();
-            grid.setItem(inputIndex++, match.stack.copyWithCount(1));
+            if (!ingredient.isEmpty()) {
+                if (match == null) return Optional.empty();
+                match.used = true;
+                int x;
+                int y;
+                if (recipe instanceof ShapedRecipe shaped) {
+                    x = inputIndex % shaped.getWidth();
+                    y = inputIndex / shaped.getWidth();
+                } else {
+                    x = inputIndex % size;
+                    y = inputIndex / size;
+                }
+                if (x >= size || y >= size) return Optional.empty();
+                grid.setItem(y * size + x, match.stack.copyWithCount(1));
+            }
+            inputIndex++;
         }
         if (!recipe.matches(grid, human.level())) return Optional.empty();
         ItemStack output = recipe.assemble(grid, human.level().registryAccess());

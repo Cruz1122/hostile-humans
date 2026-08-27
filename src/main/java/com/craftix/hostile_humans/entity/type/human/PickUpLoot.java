@@ -3,6 +3,7 @@ package com.craftix.hostile_humans.entity.type.human;
 import com.craftix.hostile_humans.entity.HumanAbility;
 import com.craftix.hostile_humans.entity.HumanEntity;
 import com.craftix.hostile_humans.entity.data.HumanData;
+import com.craftix.hostile_humans.entity.ai.survival.SquadNeedsEvaluator;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
@@ -42,7 +43,9 @@ public class PickUpLoot extends HumanAbility {
                                 itemEntity.setItem(itemstack);
                             }
                             human.markEquipmentDirty();
-                            human.reevaluateEquipment();
+                            human.queueUsefulInventoryEquipment();
+                            human.queueEquipmentReevaluation();
+                            SquadNeedsEvaluator.invalidate(human);
                         }
                     }
                 }

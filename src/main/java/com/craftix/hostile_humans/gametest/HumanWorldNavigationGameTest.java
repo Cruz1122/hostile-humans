@@ -314,6 +314,12 @@ public final class HumanWorldNavigationGameTest {
             helper.setBlock(new BlockPos(0, y, 2), Blocks.BEDROCK.defaultBlockState());
             helper.setBlock(new BlockPos(7, y, 2), Blocks.BEDROCK.defaultBlockState());
         }
+        // Two blocks of headroom keep the corridor traversable after bridging,
+        // while the ceiling prevents the live combat navigation from jumping
+        // the entire fixture before the world-action controller can detect a stall.
+        for (int x = 1; x <= 5; x++) {
+            helper.setBlock(new BlockPos(x, 3, 2), Blocks.BEDROCK.defaultBlockState());
+        }
         for (int x = 2; x <= 4; x++) helper.setBlock(new BlockPos(x, 0, 2), Blocks.AIR.defaultBlockState());
         setup.human.getData().setInventoryItem(0, new ItemStack(Items.COBBLESTONE, 6));
         setup.human.setTarget(setup.target);

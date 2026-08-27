@@ -123,7 +123,9 @@ public final class HumanChestLootGameTest {
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "chestLooting", timeoutTicks = 160)
     public static void full_inventory_does_not_delete_items(GameTestHelper helper) {
         Human human = createHuman(helper);
-        for (int slot = 20; slot < 30; slot++) human.getData().setInventoryItem(slot, new ItemStack(Items.STONE));
+        for (int slot = 0; slot < human.getData().getInventoryItemsSize(); slot++) {
+            human.getData().setInventoryItem(slot, new ItemStack(Items.STONE));
+        }
         ChestBlockEntity chest = createChest(helper, new BlockPos(3, 1, 2));
         chest.setItem(0, new ItemStack(Items.IRON_SWORD));
         ChestLootGoal goal = new ChestLootGoal(human, 0.8D);

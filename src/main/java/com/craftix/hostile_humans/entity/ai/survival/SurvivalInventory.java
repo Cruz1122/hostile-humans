@@ -58,8 +58,7 @@ public final class SurvivalInventory {
         if (human.getData() == null || offered.isEmpty()) return false;
         ItemStack probe = offered.copy();
         HumanData data = human.getData();
-        int firstPickupSlot = data.getInventoryItemsSize() - 10;
-        for (int slot = firstPickupSlot; slot < data.getInventoryItemsSize(); slot++) {
+        for (int slot = 0; slot < data.getInventoryItemsSize(); slot++) {
             ItemStack existing = data.getInventoryItem(slot);
             if (existing.isEmpty()) return true;
             if (ItemStack.isSameItemSameTags(existing, probe) && existing.getCount() < existing.getMaxStackSize()) return true;

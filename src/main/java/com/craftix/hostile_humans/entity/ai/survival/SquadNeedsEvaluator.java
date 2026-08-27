@@ -23,7 +23,7 @@ import java.util.Map;
 import java.util.UUID;
 
 public final class SquadNeedsEvaluator {
-    private static final int FOOD_PER_MEMBER = 12;
+    private static final int FOOD_PER_MEMBER = 8;
     private static final int ARROWS_PER_BOW = 24;
     private static final int WOOD_UNITS_PER_MEMBER = 12;
     private static final Map<Key, Cached> CACHE = new HashMap<>();
@@ -52,14 +52,14 @@ public final class SquadNeedsEvaluator {
     public static SquadNeeds calculate(List<Human> members) {
         EnumMap<SquadNeed, Integer> deficits = new EnumMap<>(SquadNeed.class);
         int food = sum(members, stack -> stack.getFoodProperties(null) != null && !isRawFood(stack) ? stack.getCount() : 0);
-        put(deficits, SquadNeed.FOOD, members.size() * FOOD_PER_MEMBER - food);
+        int rawFood = sum(members, stack -> isRawFood(stack) ? stack.getCount() : 0);
+        put(deficits, SquadNeed.FOOD, members.size() * FOOD_PER_MEMBER - food - Math.min(rawFood, members.size() * FOOD_PER_MEMBER));
 
         int wood = sum(members, stack -> stack.is(ItemTags.LOGS) ? stack.getCount() * 4
                 : stack.is(ItemTags.PLANKS) || stack.is(Items.STICK) ? stack.getCount() : 0);
         boolean missingBasicTool = members.stream().anyMatch(member -> !hasTool(member, PickaxeItem.class) || !hasTool(member, AxeItem.class));
         put(deficits, SquadNeed.WOOD, Math.max(missingBasicTool ? 4 : 0, members.size() * WOOD_UNITS_PER_MEMBER - wood));
 
-        int rawFood = sum(members, stack -> isRawFood(stack) ? stack.getCount() : 0);
         int rawOre = sum(members, stack -> stack.is(Items.RAW_IRON) || stack.is(Items.RAW_GOLD) ? stack.getCount() : 0);
         int fuel = sum(members, stack -> stack.is(Items.COAL) || stack.is(Items.CHARCOAL) ? stack.getCount() : 0);
         if (rawFood + rawOre > 0) put(deficits, SquadNeed.FUEL, Math.max(0, 2 - fuel));

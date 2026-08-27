@@ -541,8 +541,10 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         if (entityIn instanceof LivingEntity livingEntity && !this.canAttack(livingEntity)) return false;
 
         // Keep melee attacks from being deterministic. Higher skill tiers are
-        // more reliable, but every tier can still miss occasionally.
-        if (this.random.nextFloat() >= this.getCombatTacticsController().skillTier().attackAccuracy()) {
+        // more reliable, but every tier can still miss occasionally. Hunting
+        // passive animals is a survival action, not a PvP swing, so it always connects.
+        if (!(entityIn instanceof Animal)
+                && this.random.nextFloat() >= this.getCombatTacticsController().skillTier().attackAccuracy()) {
             this.resetFallDistance();
             this.swing(InteractionHand.MAIN_HAND);
             this.criticalStrikeReady = false;
@@ -628,7 +630,8 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             equipmentDirty = true;
         }
         if (!this.level().isClientSide && !stack.isEmpty()) {
-            this.setCombatTask();
+            if (evaluatingEquipment) this.setCombatTask();
+            else this.queueEquipmentReevaluation();
         }
     }
 
@@ -734,7 +737,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         this.squadId = compound.hasUUID("SquadId") ? compound.getUUID("SquadId") : null;
         this.equipmentDirty = true;
         restorePersonaReservation();
-        setCombatTask();
+        queueEquipmentReevaluation();
     }
 
     @Override
@@ -988,7 +991,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             }
         }
         stack.shrink(stack.getCount());
-        setCombatTask();
+        queueEquipmentReevaluation();
     }
 
     public boolean equipWeapon(Predicate<ItemStack> predicate) {
@@ -1004,7 +1007,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
                 setItemSlot(slot, inventoryItem.copy());
                 getData().setInventoryItem(i, previous);
                 if (slot == EquipmentSlot.MAINHAND) equipmentDirty = false;
-                setCombatTask();
+                queueEquipmentReevaluation();
                 return true;
             }
         }
@@ -1060,7 +1063,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             }
             if (!this.chainingHealingFood) {
                 this.tryEquipWeapon();
-                this.setCombatTask();
+                this.queueEquipmentReevaluation();
             }
         }
         if (!this.level().isClientSide) {
@@ -1392,7 +1395,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             }
         }
         if (tickCount % (20 * 15) == 0) {
-            setCombatTask();
+            queueEquipmentReevaluation();
         }
     }
 
@@ -1443,12 +1446,12 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         shieldDisablerSwapSlot = -1;
         shieldDisablerRestoreDeadline = 0;
         shieldDisablerTarget = null;
-        setCombatTask();
+        queueEquipmentReevaluation();
         return true;
     }
 
     private void tryEquipTotem() {
-    	for (int i = 16; i < 30; i++) {
+        for (int i = 16; i < getData().getInventoryItemsSize(); i++) {
             ItemStack inventoryItem = getData().getInventoryItem(i);
             if (inventoryItem.getItem() == Items.TOTEM_OF_UNDYING) {
             	for (int j = 0; j < 16; j++) {
@@ -1680,7 +1683,9 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     public void equipUsefulInventoryItems() {
         if (level().isClientSide || getTarget() != null || getData() == null) return;
-        for (ItemStack stack : getData().getInventoryItems()) equipItemIfPossible(stack);
+        for (int slot = 0; slot < getData().getInventoryItemsSize(); slot++) {
+            equipItemIfPossible(getData().getInventoryItem(slot));
+        }
     }
 
     public void queueUsefulInventoryEquipment() {
@@ -1731,9 +1736,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         super.aiStep();
 
         if (tickCount % 220 == 0 && getTarget() == null && !this.level().isClientSide) {
-            if (this.getData() != null) for (ItemStack stack : this.getData().getInventoryItems()) {
-                equipItemIfPossible(stack);
-            }
+            if (this.getData() != null) queueUsefulInventoryEquipment();
             else {
                 HostileHumans.LOGGER.warn("Missing data?" + " " + this);
                 this.remove(RemovalReason.DISCARDED);

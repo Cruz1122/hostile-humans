@@ -146,12 +146,34 @@ public final class HumanSurvivalProgressionGameTest {
         for (int tick = 0; tick < 80 && helper.getLevel().getBlockState(first).is(Blocks.OAK_LOG); tick++) goal.tick();
         helper.assertTrue(!helper.getLevel().getBlockState(first).is(Blocks.OAK_LOG), "First resource was not broken");
         goal.stop();
-        human.tickCount++;
+        human.tickCount += 10;
         helper.assertTrue(goal.canUse(), "Progression paused instead of immediately selecting the next resource");
         goal.start();
         for (int tick = 0; tick < 80 && helper.getLevel().getBlockState(second).is(Blocks.OAK_LOG); tick++) goal.tick();
         helper.assertTrue(!helper.getLevel().getBlockState(second).is(Blocks.OAK_LOG), "Second resource was not broken continuously");
         goal.stop(); cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    public static void unreachableExplorationDoesNotClaimMovement(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        human.getData().setInventoryItem(20, new ItemStack(Items.STONE_AXE));
+        human.getData().setInventoryItem(21, new ItemStack(Items.STONE_SWORD));
+        human.getData().setInventoryItem(22, new ItemStack(Items.STICK, 16));
+        human.getData().setInventoryItem(23, new ItemStack(Items.IRON_INGOT, 16));
+        human.getData().setInventoryItem(24, new ItemStack(Items.COOKED_BEEF, 16));
+        human.getData().setInventoryItem(25, new ItemStack(Items.GOLDEN_APPLE));
+        human.getData().setInventoryItem(26, new ItemStack(Items.COAL, 8));
+        for (int x = 1; x <= 3; x++) for (int z = 1; z <= 3; z++) {
+            if (x == 2 && z == 2) continue;
+            for (int y = 1; y <= 2; y++) helper.setBlock(new BlockPos(x, y, z), Blocks.STONE.defaultBlockState());
+        }
+
+        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
+        helper.assertTrue(!goal.canUse(), "Progression claimed MOVE without an actionable exploration route");
+        helper.assertTrue(human.getNavigation().isDone(), "A failed exploration decision left navigation active");
+        cleanup(human); helper.succeed();
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)

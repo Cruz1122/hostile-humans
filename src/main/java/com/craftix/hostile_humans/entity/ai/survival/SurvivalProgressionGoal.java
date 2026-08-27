@@ -63,12 +63,13 @@ public final class SurvivalProgressionGoal extends Goal {
 
     @Override
     public boolean canUse() {
-        if (!eligible()) return false;
+        // Survival decisions are deliberately less urgent than combat and
+        // should not perform world scans every time GoalSelector checks us.
+        if (!eligible() || human.tickCount < nextDecisionTick) return false;
+        nextDecisionTick = nextDecisionTick();
         SquadNeeds needs = SquadNeedsEvaluator.evaluate(human);
         if (tryShare(needs)) return false;
         if (tryImmediateCraft(needs)) return false;
-        if (human.tickCount < nextDecisionTick) return false;
-        nextDecisionTick = human.tickCount + 5 + Math.floorMod(human.getUUID().hashCode(), 5);
         List<SquadNeed> neededResources = Arrays.stream(SquadNeed.values()).filter(needs::needs).toList();
         Optional<LocalResourceScanner.ResourceTarget> resource = LocalResourceScanner.findReachableFirst(human, neededResources,
                 pos -> failedResourceUntil.getOrDefault(pos, 0) > human.tickCount);
@@ -119,11 +120,11 @@ public final class SurvivalProgressionGoal extends Goal {
         if (!eligible()) return;
         if (mode == Mode.RESOURCE) tickResource();
         else if (mode == Mode.STATION) tickStation();
-        else if (mode == Mode.EXPLORE && (human.getNavigation().isDone() || actionTicks % 60 == 0)) {
+        else if (mode == Mode.EXPLORE && human.getNavigation().isDone()) {
             SquadNeedsEvaluator.invalidate(human);
             targetPos = null;
             mode = null;
-            nextDecisionTick = human.tickCount;
+            nextDecisionTick = nextDecisionTick();
         }
     }
 
@@ -176,9 +177,10 @@ public final class SurvivalProgressionGoal extends Goal {
 
     private void tickResource() {
         if (targetPos == null || !LocalResourceScanner.matches(human.level().getBlockState(targetPos), need)) {
+            if (targetPos != null) SurvivalClaimManager.releaseResource(human, targetPos);
             targetPos = null;
             mode = null;
-            nextDecisionTick = human.tickCount;
+            nextDecisionTick = nextDecisionTick();
             return;
         }
         SurvivalClaimManager.claimResource(human, targetPos);
@@ -202,15 +204,16 @@ public final class SurvivalProgressionGoal extends Goal {
             breaker = null;
             targetPos = null;
             mode = null;
-            nextDecisionTick = human.tickCount;
+            nextDecisionTick = nextDecisionTick();
         }
     }
 
     private void tickStation() {
         if (targetPos == null || !(human.level().getBlockEntity(targetPos) instanceof AbstractFurnaceBlockEntity)) {
+            if (targetPos != null) SurvivalClaimManager.releaseStation(human, targetPos);
             targetPos = null;
             mode = null;
-            nextDecisionTick = human.tickCount;
+            nextDecisionTick = nextDecisionTick();
             return;
         }
         SurvivalClaimManager.claimStation(human, targetPos);
@@ -223,12 +226,11 @@ public final class SurvivalProgressionGoal extends Goal {
         }
         human.getNavigation().stop();
         FurnaceOperation.Result result = FurnaceOperation.tick(human, targetPos);
-        if (result != FurnaceOperation.Result.WAITING || human.level().getBlockEntity(targetPos) instanceof AbstractFurnaceBlockEntity furnace
-                && !furnace.getItem(0).isEmpty()) {
+        if (result != FurnaceOperation.Result.WAITING) {
             SurvivalClaimManager.releaseStation(human, targetPos);
             targetPos = null;
             mode = null;
-            nextDecisionTick = human.tickCount;
+            nextDecisionTick = nextDecisionTick();
         }
     }
 
@@ -302,6 +304,11 @@ public final class SurvivalProgressionGoal extends Goal {
                         && needs.needs(SquadNeed.FEATHERS) ? 0 : 1)
                 .thenComparingDouble(candidate -> human.distanceToSqr(candidate))).orElse(null);
         if (animal == null) return false;
+        var path = human.getNavigation().createPath(animal, 1);
+        if (path == null || !path.canReach()) {
+            animal = null;
+            return false;
+        }
         mode = Mode.HUNT;
         return true;
     }
@@ -312,6 +319,12 @@ public final class SurvivalProgressionGoal extends Goal {
                 || stack.is(Items.RABBIT) || stack.is(Items.COD) || stack.is(Items.SALMON));
         if (smeltable == 0) return false;
         Optional<BlockPos> furnace = findStation(Blocks.FURNACE);
+        if (furnace.isPresent() && human.level().getBlockEntity(furnace.get()) instanceof AbstractFurnaceBlockEntity furnaceEntity
+                && !furnaceEntity.getItem(0).isEmpty() && furnaceEntity.getItem(2).isEmpty()) {
+            // A batch is already cooking and there is nothing to retrieve.
+            // Do not claim MOVE just to stand beside the furnace.
+            return false;
+        }
         if (furnace.isEmpty() && SurvivalInventory.count(human, Items.FURNACE) == 0) {
             boolean table = findStation(Blocks.CRAFTING_TABLE).isPresent();
             if (table) SurvivalRecipeService.craft(human, stack -> stack.is(Items.FURNACE), true);
@@ -357,19 +370,17 @@ public final class SurvivalProgressionGoal extends Goal {
             int z = Mth.nextInt(human.getRandom(), -radius, radius);
             int y = human.blockPosition().getY() + Mth.nextInt(human.getRandom(), -4, 4);
             BlockPos candidate = new BlockPos(human.blockPosition().getX() + x, y, human.blockPosition().getZ() + z);
-            if (!human.level().hasChunkAt(candidate)) continue;
+            if (Math.abs(x) + Math.abs(z) + Math.abs(y - human.blockPosition().getY()) <= 2
+                    || !human.level().hasChunkAt(candidate)) continue;
             var path = human.getNavigation().createPath(candidate, 2);
             if (path == null || !path.canReach()) continue;
             targetPos = candidate;
             mode = Mode.EXPLORE;
             return true;
         }
-        // A navigable position at the current feet is still a valid, bounded
-        // exploration completion point; do not leave the goal unable to make
-        // a decision merely because every random sample was obstructed.
-        targetPos = human.blockPosition();
-        mode = Mode.EXPLORE;
-        return true;
+        // An empty decision must not claim MOVE. Let lower-priority vanilla
+        // strolling continue when no useful exploration route exists.
+        return false;
     }
 
     private void moveToTarget() {
@@ -391,7 +402,11 @@ public final class SurvivalProgressionGoal extends Goal {
         human.getNavigation().stop();
         targetPos = null;
         mode = null;
-        nextDecisionTick = human.tickCount;
+        nextDecisionTick = nextDecisionTick();
+    }
+
+    private int nextDecisionTick() {
+        return human.tickCount + 5 + Math.floorMod(human.getUUID().hashCode(), 5);
     }
 
     private boolean eligible() {

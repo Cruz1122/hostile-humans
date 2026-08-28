@@ -45,7 +45,7 @@ public class EventHandler {
     
     @SubscribeEvent
     public void damage(LivingDamageEvent event) {
-        if (!event.getEntity().level().isClientSide) {
+        if (!event.getEntity().level().isClientSide && !(event.getSource().getEntity() instanceof Human)) {
             for (Human human : event.getEntity().level().getEntitiesOfClass(Human.class, event.getEntity().getBoundingBox().inflate(16.0))) {
                 human.setInvestigateSound(event.getEntity().blockPosition());
             }

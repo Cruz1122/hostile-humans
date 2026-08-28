@@ -357,6 +357,57 @@ public final class HumanSurvivalProgressionGameTest {
         cleanup(human); cow.kill(); helper.succeed();
     }
 
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalHuntContinuity", timeoutTicks = 100)
+    public static void huntingContinuesAfterFirstHitThroughNormalEntityTicks(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        prepareHunter(human);
+        Cow cow = EntityType.COW.create(helper.getLevel());
+        if (cow == null) throw new IllegalStateException("Cow could not be created");
+        cow.moveTo(helper.absolutePos(new BlockPos(3, 1, 2)), 0.0F, 0.0F);
+        cow.setNoAi(true);
+        helper.getLevel().addFreshEntity(cow);
+        float initialHealth = cow.getHealth();
+        float[] firstHitHealth = {Float.NaN};
+        int[] firstHitTick = {-1};
+        int[] firstHitInvulnerableTime = {-1};
+        BlockPos[] firstHitInvestigation = {BlockPos.ZERO};
+        SurvivalProgressionGoal huntGoal = new SurvivalProgressionGoal(human);
+        human.targetSelector.removeAllGoals(goal -> true);
+        human.goalSelector.addGoal(-20, huntGoal);
+        human.setNoAi(false);
+
+        helper.startSequence()
+                .thenExecuteFor(50, () -> {
+                    if (Float.isNaN(firstHitHealth[0]) && cow.getHealth() < initialHealth) {
+                        firstHitHealth[0] = cow.getHealth();
+                        firstHitTick[0] = human.tickCount;
+                        firstHitInvulnerableTime[0] = cow.invulnerableTime;
+                        firstHitInvestigation[0] = human.investigateSound();
+                    }
+                })
+                .thenExecute(() -> {
+                    helper.assertTrue(!Float.isNaN(firstHitHealth[0]),
+                            "Normal entity ticks never produced the first hunting hit: position=" + human.blockPosition()
+                                    + ", investigating=" + human.investigateSound() + ", target=" + human.getTarget()
+                                    + ", running=" + human.goalSelector.getRunningGoals()
+                                            .map(goal -> goal.getPriority() + ":" + goal.getGoal().getClass().getSimpleName()).toList());
+                    helper.assertTrue(firstHitInvulnerableTime[0] > 0,
+                            "First hit bypassed normal damage invulnerability: " + firstHitInvulnerableTime[0]);
+                    helper.assertTrue(BlockPos.ZERO.equals(firstHitInvestigation[0]),
+                            "Human interrupted its own hunt to investigate the damage it caused: "
+                                    + firstHitInvestigation[0]);
+                })
+                .thenIdle(20)
+                .thenExecute(() -> {
+                    helper.assertTrue(!cow.isAlive() || cow.getHealth() < firstHitHealth[0],
+                            "Hunting stopped after first hit: firstHealth=" + firstHitHealth[0]
+                                    + ", currentHealth=" + cow.getHealth() + ", firstTick=" + firstHitTick[0]
+                                    + ", currentTick=" + human.tickCount + ", investigating=" + human.investigateSound());
+                    human.goalSelector.removeGoal(huntGoal);
+                    cleanup(human); cow.kill(); helper.succeed();
+                });
+    }
+
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 240)
     public static void squadHuntingKillsAnimalWithoutSynchronizedStalls(GameTestHelper helper) {
         Human first = human(helper, new BlockPos(2, 1, 2));

@@ -26,6 +26,7 @@ public final class SquadNeedsEvaluator {
     private static final int FOOD_PER_MEMBER = 8;
     private static final int ARROWS_PER_BOW = 24;
     private static final int WOOD_UNITS_PER_MEMBER = 12;
+    private static final int STONE_PER_BASIC_TOOL = 3;
     private static final Map<Key, Cached> CACHE = new HashMap<>();
 
     private SquadNeedsEvaluator() {}
@@ -64,10 +65,14 @@ public final class SquadNeedsEvaluator {
         int fuel = sum(members, stack -> stack.is(Items.COAL) || stack.is(Items.CHARCOAL) ? stack.getCount() : 0);
         if (rawFood + rawOre > 0) put(deficits, SquadNeed.FUEL, Math.max(0, 2 - fuel));
 
-        boolean needsStonePickaxe = members.stream().anyMatch(member -> !SurvivalInventory.contains(member,
-                stack -> stack.getItem() instanceof PickaxeItem pickaxe && pickaxe.getTier().getLevel() >= 1));
-        if (needsStonePickaxe) put(deficits, SquadNeed.STONE, Math.max(0, 3 * members.size()
-                - count(members, Items.COBBLESTONE) - count(members, Items.COBBLED_DEEPSLATE)));
+        int missingStoneTools = 0;
+        for (Human member : members) {
+            if (!hasStoneTool(member, PickaxeItem.class)) missingStoneTools++;
+            if (!hasStoneTool(member, AxeItem.class)) missingStoneTools++;
+        }
+        if (missingStoneTools > 0) put(deficits, SquadNeed.STONE,
+                Math.max(0, missingStoneTools * STONE_PER_BASIC_TOOL
+                        - count(members, Items.COBBLESTONE) - count(members, Items.COBBLED_DEEPSLATE)));
 
         int ironGearMissing = 0;
         int diamondGearMissing = 0;
@@ -111,6 +116,12 @@ public final class SquadNeedsEvaluator {
 
     private static boolean hasTool(Human member, Class<?> type) {
         return SurvivalInventory.contains(member, stack -> type.isInstance(stack.getItem()));
+    }
+
+    private static boolean hasStoneTool(Human member, Class<?> type) {
+        return SurvivalInventory.contains(member, stack -> type.isInstance(stack.getItem())
+                && stack.getItem() instanceof net.minecraft.world.item.TieredItem tiered
+                && tiered.getTier().getLevel() >= 1);
     }
 
     private static boolean isRawFood(ItemStack stack) {

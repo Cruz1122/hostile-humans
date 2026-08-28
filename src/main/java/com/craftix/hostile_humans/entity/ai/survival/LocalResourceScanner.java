@@ -68,8 +68,10 @@ public final class LocalResourceScanner {
             if (pos == null) continue;
             if (!validatePath) return Optional.of(new ResourceTarget(need, pos));
             Optional<BlockPos> interaction = interactionPosition(human, pos);
-            if (interaction.isEmpty()) continue;
-            if (withinGatherRange(human, pos) || reachable(human, interaction.get())) {
+            // A nearby block can be mined without a walkable cell at the
+            // block's own height. This matters for vertical trees and ledges.
+            if (withinGatherRange(human, pos)
+                    || interaction.isPresent() && reachable(human, interaction.get())) {
                 return Optional.of(new ResourceTarget(need, pos));
             }
         }

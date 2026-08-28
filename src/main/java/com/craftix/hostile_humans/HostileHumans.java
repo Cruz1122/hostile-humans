@@ -68,6 +68,7 @@ public class HostileHumans {
 
         forgeEventBus.addListener(ServerSetup::handleServerStartingEvent);
         forgeEventBus.addListener(HumanLoadoutManager::addReloadListener);
+        forgeEventBus.addListener(HostileHumansCommands::register);
 
         MinecraftForge.EVENT_BUS.register(new EventHandler());
         

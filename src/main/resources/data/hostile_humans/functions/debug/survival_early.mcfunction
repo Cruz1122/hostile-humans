@@ -4,8 +4,10 @@ gamerule mobGriefing true
 gamerule doMobSpawning false
 fill ~-12 ~-1 ~-10 ~12 ~-1 ~10 minecraft:grass_block
 fill ~-12 ~ ~-10 ~12 ~8 ~10 minecraft:air
-fill ~5 ~ ~-2 ~5 ~4 ~-2 minecraft:oak_log
+fill ~5 ~ ~-2 ~5 ~5 ~-2 minecraft:oak_log
 fill ~3 ~4 ~-4 ~7 ~6 ~ minecraft:oak_leaves
+# Restore the trunk through the leaf canopy so the test has six real logs.
+fill ~5 ~ ~-2 ~5 ~5 ~-2 minecraft:oak_log
 fill ~-1 ~ ~4 ~3 ~2 ~6 minecraft:stone
 setblock ~1 ~1 ~5 minecraft:coal_ore
 summon minecraft:cow ~-5 ~ ~4 {PersistenceRequired:1b,Tags:["hh_survival_early"]}

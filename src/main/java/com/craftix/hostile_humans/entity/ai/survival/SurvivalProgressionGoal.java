@@ -243,15 +243,11 @@ public final class SurvivalProgressionGoal extends Goal {
                     && SurvivalRecipeService.craft(human, stack -> stack.is(ItemTags.PLANKS), false).isPresent();
             if (!step) step = sticks < 4 && planks > 0
                     && SurvivalRecipeService.craft(human, stack -> stack.is(Items.STICK), false).isPresent();
-            boolean table = findStation(Blocks.CRAFTING_TABLE)
-                    .filter(pos -> human.distanceToSqr(pos.getX() + .5D, pos.getY() + .5D, pos.getZ() + .5D) <= 9.0D)
-                    .isPresent();
+            boolean table = hasNearbyStation(Blocks.CRAFTING_TABLE);
             if (!table && SurvivalInventory.count(human, Items.CRAFTING_TABLE) == 0)
                 step |= SurvivalRecipeService.craft(human, stack -> stack.is(Items.CRAFTING_TABLE), false).isPresent();
             if (!table && placeStation(Items.CRAFTING_TABLE, Blocks.CRAFTING_TABLE)) step = true;
-            table = findStation(Blocks.CRAFTING_TABLE)
-                    .filter(pos -> human.distanceToSqr(pos.getX() + .5D, pos.getY() + .5D, pos.getZ() + .5D) <= 9.0D)
-                    .isPresent();
+            table = hasNearbyStation(Blocks.CRAFTING_TABLE);
             if (table) step |= craftNeededGear(needs, true);
             if (table && needs.needs(SquadNeed.STRING))
                 step |= SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof BowItem, true).isPresent();
@@ -265,9 +261,11 @@ public final class SurvivalProgressionGoal extends Goal {
         if (!table) return false;
         if (SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof PickaxeItem
                 && GearUpgradePolicy.usefulUpgrade(human, stack), true).isPresent()) return true;
-        if (SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof SwordItem
-                && GearUpgradePolicy.usefulUpgrade(human, stack), true).isPresent()) return true;
         if (SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof AxeItem
+                && GearUpgradePolicy.usefulUpgrade(human, stack), true).isPresent()) return true;
+        // Mining tools take precedence over combat upgrades so the human can
+        // immediately continue gathering stone after the first wood stage.
+        if (SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof SwordItem
                 && GearUpgradePolicy.usefulUpgrade(human, stack), true).isPresent()) return true;
         return SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof net.minecraft.world.item.ArmorItem
                 && GearUpgradePolicy.usefulUpgrade(human, stack), true).isPresent();
@@ -344,9 +342,29 @@ public final class SurvivalProgressionGoal extends Goal {
                 .filter(human.level()::hasChunkAt)
                 .filter(pos -> human.level().getBlockState(pos).is(block))
                 .filter(pos -> !SurvivalClaimManager.stationClaimedByOther(human, pos))
-                .filter(pos -> { var path = human.getNavigation().createPath(pos, 0); return path != null && path.canReach(); })
+                .filter(pos -> stationReachable(pos))
                 .map(BlockPos::immutable)
                 .min(Comparator.comparingDouble(pos -> pos.distSqr(origin)));
+    }
+
+    private boolean hasNearbyStation(net.minecraft.world.level.block.Block block) {
+        int radius = Config.resourceScanRadius.get();
+        BlockPos origin = human.blockPosition();
+        return BlockPos.betweenClosedStream(origin.offset(-radius, -4, -radius), origin.offset(radius, 4, radius))
+                .filter(human.level()::hasChunkAt)
+                .filter(pos -> human.level().getBlockState(pos).is(block))
+                .filter(pos -> !SurvivalClaimManager.stationClaimedByOther(human, pos))
+                .anyMatch(pos -> human.distanceToSqr(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D) <= 9.0D);
+    }
+
+    private boolean stationReachable(BlockPos station) {
+        if (human.distanceToSqr(station.getX() + 0.5D, station.getY() + 0.5D, station.getZ() + 0.5D) <= 9.0D) {
+            return true;
+        }
+        return Direction.Plane.HORIZONTAL.stream()
+                .map(station::relative)
+                .map(pos -> human.getNavigation().createPath(pos, 0))
+                .anyMatch(path -> path != null && path.canReach());
     }
 
     private boolean placeStation(net.minecraft.world.item.Item item, net.minecraft.world.level.block.Block block) {

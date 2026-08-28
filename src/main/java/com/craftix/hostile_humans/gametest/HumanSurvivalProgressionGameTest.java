@@ -1,5 +1,6 @@
 package com.craftix.hostile_humans.gametest;
 
+import com.craftix.hostile_humans.HostileHumansCommands;
 import com.craftix.hostile_humans.entity.ai.survival.FurnaceOperation;
 import com.craftix.hostile_humans.entity.ai.survival.LocalResourceScanner;
 import com.craftix.hostile_humans.entity.ai.survival.ProgressionCraftingPolicy;
@@ -29,6 +30,7 @@ import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
 
@@ -47,6 +49,15 @@ public final class HumanSurvivalProgressionGameTest {
         Human human = human(helper, new BlockPos(2, 1, 2));
         SquadNeeds needs = SquadNeedsEvaluator.calculate(List.of(human));
         helper.assertTrue(needs.needs(SquadNeed.WOOD), "Missing basic tools did not activate WOOD");
+        cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    public static void missingPickaxeAndAxeRequiresEnoughStone(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        SquadNeeds needs = SquadNeedsEvaluator.calculate(List.of(human));
+        helper.assertTrue(needs.deficit(SquadNeed.STONE) == 6,
+                "Missing stone pickaxe and axe did not require six stone: " + needs.deficit(SquadNeed.STONE));
         cleanup(human); helper.succeed();
     }
 
@@ -107,6 +118,20 @@ public final class HumanSurvivalProgressionGameTest {
         helper.setBlock(relative, Blocks.IRON_ORE.defaultBlockState());
         for (var direction : net.minecraft.core.Direction.values()) helper.setBlock(relative.relative(direction), Blocks.STONE.defaultBlockState());
         helper.assertTrue(LocalResourceScanner.find(human, SquadNeed.IRON).isEmpty(), "Completely hidden iron was detected");
+        cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    public static void nearbyElevatedResourceDoesNotNeedWalkableInteractionCell(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        BlockPos elevatedLog = helper.absolutePos(new BlockPos(3, 3, 2));
+        helper.setBlock(new BlockPos(3, 3, 2), Blocks.OAK_LOG.defaultBlockState());
+
+        helper.assertTrue(LocalResourceScanner.interactionPosition(human, elevatedLog).isEmpty(),
+                "Elevated fixture unexpectedly had a walkable interaction cell");
+        helper.assertTrue(LocalResourceScanner.findReachableFirst(human, List.of(SquadNeed.WOOD), pos -> false)
+                        .map(LocalResourceScanner.ResourceTarget::pos).filter(elevatedLog::equals).isPresent(),
+                "Nearby elevated resource was rejected despite being inside gather range");
         cleanup(human); helper.succeed();
     }
 
@@ -527,6 +552,19 @@ public final class HumanSurvivalProgressionGameTest {
         SquadNeeds covered = new SquadNeeds(java.util.Map.of());
         helper.assertTrue(!ProgressionCraftingPolicy.shouldCraftGoldenApple(human, covered), "Stock target allowed another golden apple");
         cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    public static void inventoryCommandSelectsNearestHuman(GameTestHelper helper) {
+        Human near = human(helper, new BlockPos(3, 1, 2));
+        Human far = human(helper, new BlockPos(6, 1, 2));
+        near.getData().setInventoryItem(20, new ItemStack(Items.OAK_LOG, 2));
+        far.getData().setInventoryItem(20, new ItemStack(Items.COBBLESTONE, 2));
+
+        Vec3 origin = Vec3.atCenterOf(helper.absolutePos(new BlockPos(2, 1, 2)));
+        helper.assertTrue(HostileHumansCommands.findNearest(helper.getLevel(), origin, 32).orElse(null) == near,
+                "Inventory command did not select the nearest Human");
+        cleanup(near, far); helper.succeed();
     }
 
     private static Human human(GameTestHelper helper, BlockPos relativePos) {

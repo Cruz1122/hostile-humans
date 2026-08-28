@@ -87,6 +87,20 @@ git diff --check
 - `survival_interruptions`: interrupción por amenaza y reanudación.
 - `survival_interruptions_start`: auxiliar programado por el escenario anterior.
 
+## Inspección de inventario en juego
+
+Los operadores pueden inspeccionar el estado persistente del NPC más cercano con:
+
+```text
+/hostilehumans inventory
+/hostilehumans inventory <radius>
+```
+
+El radio predeterminado es 32 bloques y el máximo es 128. El comando muestra el
+UUID, posición, distancia, manos, armadura y todos los slots no vacíos del
+inventario de `HumanData`, que es el inventario usado por la progresión de
+supervivencia.
+
 ## Índice de código incluido
 
 Todos los archivos enumerados a continuación se reproducen **completos**, desde su primera hasta su última línea. Esto incluye archivos grandes de integración (`Human.java`, `HumanData.java`, `Config.java`) para que la referencia no oculte contratos alrededor de la feature.

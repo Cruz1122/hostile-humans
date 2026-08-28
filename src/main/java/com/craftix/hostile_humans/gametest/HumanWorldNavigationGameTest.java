@@ -40,16 +40,21 @@ public final class HumanWorldNavigationGameTest {
         helper.succeed();
     }
 
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "worldNavigation", timeoutTicks = 40)
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "worldNavigationGameRule", timeoutTicks = 40)
     public static void pillarRespectsMobGriefing(GameTestHelper helper) {
+        var gameRule = helper.getLevel().getGameRules().getRule(GameRules.RULE_MOBGRIEFING);
+        boolean previousValue = gameRule.get();
         Setup setup = setup(helper, new BlockPos(2, 1, 2), new BlockPos(2, 4, 2));
         setup.human.getData().setInventoryItem(0, new ItemStack(Items.COBBLESTONE, 2));
-        helper.getLevel().getGameRules().getRule(GameRules.RULE_MOBGRIEFING).set(false, helper.getLevel().getServer());
-        setup.human.setTarget(setup.target);
-        helper.assertTrue(!PillarUpAction.tryPlace(setup.human), "Pillar ignored mobGriefing=false");
-        helper.assertTrue(setup.human.getData().getInventoryItem(0).getCount() == 2, "Rejected pillar consumed a block");
-        helper.getLevel().getGameRules().getRule(GameRules.RULE_MOBGRIEFING).set(true, helper.getLevel().getServer());
-        helper.succeed();
+        try {
+            gameRule.set(false, helper.getLevel().getServer());
+            setup.human.setTarget(setup.target);
+            helper.assertTrue(!PillarUpAction.tryPlace(setup.human), "Pillar ignored mobGriefing=false");
+            helper.assertTrue(setup.human.getData().getInventoryItem(0).getCount() == 2, "Rejected pillar consumed a block");
+            helper.succeed();
+        } finally {
+            gameRule.set(previousValue, helper.getLevel().getServer());
+        }
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "worldNavigation", timeoutTicks = 40)
@@ -63,17 +68,22 @@ public final class HumanWorldNavigationGameTest {
         helper.succeed();
     }
 
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "worldNavigation", timeoutTicks = 40)
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "worldNavigationGameRule", timeoutTicks = 40)
     public static void bridgeRespectsMobGriefing(GameTestHelper helper) {
+        var gameRule = helper.getLevel().getGameRules().getRule(GameRules.RULE_MOBGRIEFING);
+        boolean previousValue = gameRule.get();
         Setup setup = setup(helper, new BlockPos(1, 1, 2), new BlockPos(5, 1, 2));
         helper.setBlock(new BlockPos(2, 0, 2), Blocks.AIR.defaultBlockState());
         setup.human.getData().setInventoryItem(0, new ItemStack(Items.COBBLESTONE, 2));
-        helper.getLevel().getGameRules().getRule(GameRules.RULE_MOBGRIEFING).set(false, helper.getLevel().getServer());
-        setup.human.setTarget(setup.target);
-        helper.assertTrue(!BridgeGapAction.tryPlace(setup.human), "Bridge ignored mobGriefing=false");
-        helper.assertTrue(setup.human.getData().getInventoryItem(0).getCount() == 2, "Rejected bridge consumed a block");
-        helper.getLevel().getGameRules().getRule(GameRules.RULE_MOBGRIEFING).set(true, helper.getLevel().getServer());
-        helper.succeed();
+        try {
+            gameRule.set(false, helper.getLevel().getServer());
+            setup.human.setTarget(setup.target);
+            helper.assertTrue(!BridgeGapAction.tryPlace(setup.human), "Bridge ignored mobGriefing=false");
+            helper.assertTrue(setup.human.getData().getInventoryItem(0).getCount() == 2, "Rejected bridge consumed a block");
+            helper.succeed();
+        } finally {
+            gameRule.set(previousValue, helper.getLevel().getServer());
+        }
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "worldNavigation", timeoutTicks = 40)
@@ -213,18 +223,23 @@ public final class HumanWorldNavigationGameTest {
         helper.succeed();
     }
 
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "worldNavigation", timeoutTicks = 40)
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "worldNavigationGameRule", timeoutTicks = 40)
     public static void miningRespectsMobGriefing(GameTestHelper helper) {
+        var gameRule = helper.getLevel().getGameRules().getRule(GameRules.RULE_MOBGRIEFING);
+        boolean previousValue = gameRule.get();
         Setup setup = setup(helper, new BlockPos(2, 1, 2), new BlockPos(5, 1, 2));
         BlockPos obstacle = helper.absolutePos(new BlockPos(3, 1, 2));
         helper.setBlock(new BlockPos(3, 1, 2), Blocks.STONE.defaultBlockState());
         setup.human.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
-        helper.getLevel().getGameRules().getRule(GameRules.RULE_MOBGRIEFING).set(false, helper.getLevel().getServer());
-        setup.human.setTarget(setup.target);
-        helper.assertTrue(!BreakObstacleAction.tryBreak(setup.human), "Mining ignored mobGriefing=false");
-        helper.assertTrue(helper.getLevel().getBlockState(obstacle).is(Blocks.STONE), "Mining removed a block with mobGriefing=false");
-        helper.getLevel().getGameRules().getRule(GameRules.RULE_MOBGRIEFING).set(true, helper.getLevel().getServer());
-        helper.succeed();
+        try {
+            gameRule.set(false, helper.getLevel().getServer());
+            setup.human.setTarget(setup.target);
+            helper.assertTrue(!BreakObstacleAction.tryBreak(setup.human), "Mining ignored mobGriefing=false");
+            helper.assertTrue(helper.getLevel().getBlockState(obstacle).is(Blocks.STONE), "Mining removed a block with mobGriefing=false");
+            helper.succeed();
+        } finally {
+            gameRule.set(previousValue, helper.getLevel().getServer());
+        }
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "worldNavigationMiningIntegration", timeoutTicks = 120)

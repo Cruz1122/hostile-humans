@@ -154,7 +154,7 @@ public final class HumanEquipmentGameTest {
         human.getData().setInventoryItem(5, new ItemStack(Items.COOKED_BEEF, 16));
         human.getData().setInventoryItem(6, new ItemStack(Items.STICK, 16));
         human.getData().setInventoryItem(7, new ItemStack(Items.GOLDEN_APPLE));
-        human.setNoAi(false);
+        human.setNoAi(true);
         human.setAggressionLevel(AggressionMode.PASSIVE);
         ItemEntity droppedSword = new ItemEntity(helper.getLevel(),
                 helper.absolutePos(new BlockPos(3, 1, 2)).getX() + 0.5D,
@@ -167,7 +167,10 @@ public final class HumanEquipmentGameTest {
         helper.assertTrue(lootGoal.canUse(), "Nearby useful drop was not selected");
         lootGoal.start();
 
-        helper.startSequence().thenExecuteFor(140, lootGoal::tick).thenExecute(() -> {
+        helper.startSequence().thenExecuteFor(140, () -> {
+            lootGoal.tick();
+            human.getNavigation().tick();
+        }).thenExecute(() -> {
             helper.assertTrue(droppedSword.isRemoved(), "Human did not walk to and pick up nearby useful loot");
             human.reevaluateEquipment();
             helper.assertTrue(human.getMainHandItem().is(Items.DIAMOND_SWORD),

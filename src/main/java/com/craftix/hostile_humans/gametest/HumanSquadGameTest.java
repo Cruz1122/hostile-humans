@@ -92,26 +92,9 @@ public final class HumanSquadGameTest {
         SquadManager.alertRetreatingAlly(retreating, attacker);
 
         helper.assertTrue(defender.getTarget() == attacker, "Healthy squad member did not protect retreating ally");
+        helper.assertTrue(!defender.isFleeing, "Healthy defender was forced into squad-wide retreat");
         helper.assertTrue(retreating.isFleeing, "Protection alert cancelled the wounded ally's retreat");
         helper.assertTrue(retreating.getTarget() == null, "Retreating ally reacquired a combat target");
-        cleanup(retreating, defender, attacker);
-        helper.succeed();
-    }
-
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "squadTactics", timeoutTicks = 40)
-    public static void retreatDoesNotForceSquadRetreat(GameTestHelper helper) {
-        UUID squadId = UUID.randomUUID();
-        Human retreating = createHuman(helper, new BlockPos(1, 1, 1), "goncho", squadId);
-        Human defender = createHuman(helper, new BlockPos(3, 1, 1), "killercreeper55", squadId);
-        Human attacker = createHuman(helper, new BlockPos(5, 1, 1), "antfrost", null);
-        retreating.setHealth(1.0F);
-        retreating.isFleeing = true;
-        retreating.toAvoid = attacker;
-
-        SquadManager.alertRetreatingAlly(retreating, attacker);
-
-        helper.assertTrue(!defender.isFleeing, "Healthy defender was forced into squad-wide retreat");
-        helper.assertTrue(defender.getTarget() == attacker, "Healthy defender stopped fighting during ally retreat");
         cleanup(retreating, defender, attacker);
         helper.succeed();
     }

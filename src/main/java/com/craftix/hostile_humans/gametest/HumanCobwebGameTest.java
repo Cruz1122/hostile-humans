@@ -47,14 +47,20 @@ public final class HumanCobwebGameTest {
         helper.succeed();
     }
 
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalCobweb", timeoutTicks = 80)
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalCobwebGameRule", timeoutTicks = 80)
     public static void respectsMobGriefing(GameTestHelper helper) {
-        Setup setup = setup(helper, true, false);
-        int before = setup.human.getData().getInventoryItem(0).getCount();
-        helper.assertTrue(!PlaceCobwebAction.tryPlace(setup.human), "Placement ignored mobGriefing=false");
-        helper.assertTrue(!setup.hasCobwebNearHuman(), "Cobweb appeared with mobGriefing=false");
-        helper.assertTrue(setup.human.getData().getInventoryItem(0).getCount() == before, "Inventory changed while placement was rejected");
-        helper.succeed();
+        var gameRule = helper.getLevel().getGameRules().getRule(GameRules.RULE_MOBGRIEFING);
+        boolean previousValue = gameRule.get();
+        try {
+            Setup setup = setup(helper, true, false);
+            int before = setup.human.getData().getInventoryItem(0).getCount();
+            helper.assertTrue(!PlaceCobwebAction.tryPlace(setup.human), "Placement ignored mobGriefing=false");
+            helper.assertTrue(!setup.hasCobwebNearHuman(), "Cobweb appeared with mobGriefing=false");
+            helper.assertTrue(setup.human.getData().getInventoryItem(0).getCount() == before, "Inventory changed while placement was rejected");
+            helper.succeed();
+        } finally {
+            gameRule.set(previousValue, helper.getLevel().getServer());
+        }
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalCobweb", timeoutTicks = 80)

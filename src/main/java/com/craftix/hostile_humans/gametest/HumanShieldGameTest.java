@@ -29,17 +29,6 @@ public final class HumanShieldGameTest {
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 40)
-    public static void shieldStateModelIsAvailable(GameTestHelper helper) {
-        Human human = createHuman(helper);
-        helper.assertTrue(ShieldState.valueOf("UNAVAILABLE") == ShieldState.UNAVAILABLE,
-                "Shield state enum is not available");
-        helper.assertTrue(CombatSkillTier.values().length == 5, "Expected competitive T1-T5 skill tiers");
-        helper.assertTrue(human.getCombatTacticsController().shieldState() == ShieldState.UNAVAILABLE,
-                "A human without an offhand shield must start unavailable");
-        helper.succeed();
-    }
-
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 40)
     public static void everyCombatTierSupportsAggressiveCombos(GameTestHelper helper) {
         double previousAccuracy = 1.0D;
         for (CombatSkillTier tier : CombatSkillTier.values()) {
@@ -76,6 +65,8 @@ public final class HumanShieldGameTest {
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 40)
     public static void shieldRequiresUsableOffhand(GameTestHelper helper) {
         Human human = createHuman(helper);
+        helper.assertTrue(human.getCombatTacticsController().shieldState() == ShieldState.UNAVAILABLE,
+                "A human without an offhand shield must start unavailable");
         human.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
         helper.assertTrue(human.getOffhandItem().canPerformAction(net.minecraftforge.common.ToolActions.SHIELD_BLOCK),
                 "Shield was not recognized through Forge ToolActions");

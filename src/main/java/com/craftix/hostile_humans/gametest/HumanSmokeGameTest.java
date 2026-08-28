@@ -30,7 +30,7 @@ public final class HumanSmokeGameTest {
     private HumanSmokeGameTest() {
     }
 
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", timeoutTicks = 40)
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "smoke", timeoutTicks = 40)
     public static void humanLifecycleSmoke(GameTestHelper helper) {
         EntityType<Human> humanType = ModEntityType.HUMAN1.get();
         Human human = humanType.create(helper.getLevel());

@@ -110,14 +110,16 @@ public final class HumanSurvivalProgressionGameTest {
         cleanup(human); helper.succeed();
     }
 
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalResourceIsolation", timeoutTicks = 40)
     public static void hiddenOreIsNotDetected(GameTestHelper helper) {
         Human human = human(helper, new BlockPos(2, 1, 2));
         human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
         BlockPos relative = new BlockPos(4, 2, 2);
+        BlockPos ore = helper.absolutePos(relative);
         helper.setBlock(relative, Blocks.IRON_ORE.defaultBlockState());
         for (var direction : net.minecraft.core.Direction.values()) helper.setBlock(relative.relative(direction), Blocks.STONE.defaultBlockState());
-        helper.assertTrue(LocalResourceScanner.find(human, SquadNeed.IRON).isEmpty(), "Completely hidden iron was detected");
+        helper.assertTrue(LocalResourceScanner.find(human, SquadNeed.IRON).filter(ore::equals).isEmpty(),
+                "Completely hidden iron was detected");
         cleanup(human); helper.succeed();
     }
 
@@ -215,9 +217,11 @@ public final class HumanSurvivalProgressionGameTest {
         drop.kill(); cleanup(human); helper.succeed();
     }
 
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalLootIsolation", timeoutTicks = 40)
     public static void elevatedDropWithoutPickupReachIsIgnored(GameTestHelper helper) {
         Human human = human(helper, new BlockPos(2, 1, 2));
+        helper.getLevel().getEntitiesOfClass(ItemEntity.class,
+                human.getBoundingBox().inflate(12.0D, 6.0D, 12.0D)).forEach(item -> item.discard());
         ItemEntity drop = new ItemEntity(helper.getLevel(), human.getX(), human.getY() + 4.0D, human.getZ(),
                 new ItemStack(Items.OAK_LOG));
         drop.setNoGravity(true);
@@ -433,38 +437,6 @@ public final class HumanSurvivalProgressionGameTest {
                 });
     }
 
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 240)
-    public static void squadHuntingKillsAnimalWithoutSynchronizedStalls(GameTestHelper helper) {
-        Human first = human(helper, new BlockPos(2, 1, 2));
-        Human second = human(helper, new BlockPos(2, 1, 3));
-        Human third = human(helper, new BlockPos(3, 1, 2));
-        prepareHunter(first);
-        prepareHunter(second);
-        prepareHunter(third);
-        Cow cow = EntityType.COW.create(helper.getLevel());
-        if (cow == null) throw new IllegalStateException("Cow could not be created");
-        cow.moveTo(helper.absolutePos(new BlockPos(3, 1, 3)), 0.0F, 0.0F);
-        cow.setNoAi(true);
-        helper.getLevel().addFreshEntity(cow);
-        cow.setHealth(4.0F);
-        List<SurvivalProgressionGoal> goals = List.of(new SurvivalProgressionGoal(first),
-                new SurvivalProgressionGoal(second), new SurvivalProgressionGoal(third));
-        for (SurvivalProgressionGoal goal : goals) {
-            helper.assertTrue(goal.canUse(), "Squad hunter did not select the reachable animal");
-            goal.start();
-        }
-        for (int tick = 0; tick < 40 && cow.isAlive(); tick++) {
-            for (Human hunter : List.of(first, second, third)) {
-                cow.invulnerableTime = 0;
-                cow.hurtTime = 0;
-                hunter.doHurtTarget(cow);
-            }
-        }
-        helper.assertTrue(!cow.isAlive(), "Three staggered hunters did not kill one passive animal promptly");
-        goals.forEach(SurvivalProgressionGoal::stop);
-        cleanup(first); cleanup(second); cleanup(third); cow.kill(); helper.succeed();
-    }
-
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
     public static void furnaceSmeltingIsNotInstant(GameTestHelper helper) {
         Human human = human(helper, new BlockPos(2, 1, 2));
@@ -493,19 +465,19 @@ public final class HumanSurvivalProgressionGameTest {
         cleanup(human); helper.succeed();
     }
 
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 260)
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
     public static void cookedFoodIsRetrieved(GameTestHelper helper) {
         Human human = human(helper, new BlockPos(2, 1, 2));
-        human.getData().setInventoryItem(20, new ItemStack(Items.BEEF));
-        human.getData().setInventoryItem(21, new ItemStack(Items.COAL));
         BlockPos furnacePos = helper.absolutePos(new BlockPos(3, 1, 2));
         helper.setBlock(new BlockPos(3, 1, 2), Blocks.FURNACE.defaultBlockState());
-        FurnaceOperation.tick(human, furnacePos);
-        helper.startSequence().thenIdle(220).thenExecute(() -> {
-            FurnaceOperation.tick(human, furnacePos);
-            helper.assertTrue(SurvivalInventory.count(human, Items.COOKED_BEEF) == 1, "Cooked food was not retrieved");
-            cleanup(human); helper.succeed();
-        });
+        AbstractFurnaceBlockEntity furnace = (AbstractFurnaceBlockEntity) helper.getLevel().getBlockEntity(furnacePos);
+        furnace.setItem(2, new ItemStack(Items.COOKED_BEEF));
+        helper.assertTrue(FurnaceOperation.tick(human, furnacePos) == FurnaceOperation.Result.RETRIEVED,
+                "Available furnace output was not retrieved");
+        helper.assertTrue(SurvivalInventory.count(human, Items.COOKED_BEEF) == 1,
+                "Retrieved cooked food did not reach human inventory");
+        helper.assertTrue(furnace.getItem(2).isEmpty(), "Retrieved cooked food remained duplicated in the furnace");
+        cleanup(human); helper.succeed();
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)

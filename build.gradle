@@ -21,6 +21,30 @@ apply plugin: 'org.spongepowered.mixin'
 group = mod_group_id
 version = "${version_major}.${version_minor}.${version_patch}"
 
+def gameTestClassesByScope = [
+        smoke          : ['HumanSmokeGameTest'],
+        persona        : ['HumanPersonaGameTest'],
+        squad          : ['HumanSquadGameTest'],
+        equipment      : ['HumanEquipmentGameTest'],
+        chestloot      : ['HumanChestLootGameTest'],
+        cobweb         : ['HumanCobwebGameTest'],
+        shield         : ['HumanShieldGameTest'],
+        sound          : ['HumanSoundGameTest', 'HumanSmokeGameTest'],
+        worldnavigation: ['HumanWorldNavigationGameTest'],
+        survival       : ['HumanSurvivalProgressionGameTest']
+]
+def requestedGameTestScopes = providers.gradleProperty('gameTestFilter').map { value ->
+    value.split(',').collect { it.trim().toLowerCase(Locale.ROOT) }.findAll { !it.isEmpty() }
+}
+
+if (requestedGameTestScopes.isPresent()) {
+    def unknownScopes = requestedGameTestScopes.get().findAll { !gameTestClassesByScope.containsKey(it) }
+    if (!unknownScopes.isEmpty()) {
+        throw new GradleException("Unknown gameTestFilter value(s): ${unknownScopes.join(', ')}. "
+                + "Available values: ${gameTestClassesByScope.keySet().join(', ')}")
+    }
+}
+
 base {
     archivesName = "${mod_id}_${minecraft_version}"
 }
@@ -80,11 +104,12 @@ minecraft {
         }
 
         gameTestServer {
-            workingDirectory project.file('run')
+            workingDirectory project.file('run/gametest')
 
-            property 'forge.logging.markers', 'REGISTRIES'
-            property 'forge.logging.console.level', 'debug'
-            property 'forge.enabledGameTestNamespaces', 'hostile_humans'
+            property 'forge.logging.console.level', 'info'
+            property 'forge.enabledGameTestNamespaces', mod_id
+            property 'mixin.debug.export', 'false'
+            property 'mixin.debug.verbose', 'false'
 
             mods {
                 hostile_humans {
@@ -189,6 +214,27 @@ tasks.named('processResources', ProcessResources).configure {
 
     filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
         expand replaceProperties + [project: project]
+    }
+
+}
+
+tasks.named('compileJava', JavaCompile).configure {
+    inputs.property('gameTestFilter', requestedGameTestScopes.map { it.join(',') }.orElse('all'))
+
+    if (requestedGameTestScopes.isPresent()) {
+        def selectedClasses = requestedGameTestScopes.get()
+                .collectMany { gameTestClassesByScope[it] }
+                .toSet()
+        options.incremental = false
+        exclude { details ->
+            details.path.startsWith('com/craftix/hostile_humans/gametest/')
+                    && !selectedClasses.contains(details.file.name - '.java')
+        }
+        doFirst {
+            delete fileTree(destinationDirectory) {
+                include 'com/craftix/hostile_humans/gametest/**'
+            }
+        }
     }
 }
 

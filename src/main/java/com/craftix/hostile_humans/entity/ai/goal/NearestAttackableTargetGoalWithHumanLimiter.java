@@ -15,6 +15,8 @@ import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.scores.Team;
 
+import java.util.function.Predicate;
+
 import static com.craftix.hostile_humans.HumanUtil.greetings;
 import static com.craftix.hostile_humans.HumanUtil.isLookingAtTarget;
 
@@ -26,6 +28,17 @@ public class NearestAttackableTargetGoalWithHumanLimiter<T extends LivingEntity>
         super(p_26060_, p_26061_, p_26062_);
 
         human = p_26060_;
+    }
+
+    public NearestAttackableTargetGoalWithHumanLimiter(
+            Human human,
+            Class<T> targetClass,
+            int randomInterval,
+            boolean mustSee,
+            boolean mustReach,
+            Predicate<LivingEntity> targetSelector) {
+        super(human, targetClass, randomInterval, mustSee, mustReach, targetSelector);
+        this.human = human;
     }
 
     public boolean canContinueToUse() {

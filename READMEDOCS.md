@@ -136,14 +136,14 @@ deterministic manual cobweb test, set `run_away_middle_fight_chance = 1.0` in
 `config/hostile_humans-common.toml` and restart the server before running the
 scenario. This does not change the server tactical-equipment settings.
 
-GameTests are grouped in `tacticalEquipment` and `tacticalCobweb` batches and
-cover primary-over-fallback selection, fallback use, pickup upgrade, invalid
-items, stable ties, successful placement and consumption, empty inventory,
-`mobGriefing`, support validation and cooldown.
+GameTests are documented in `TESTING.md` and currently cover 100 cases across
+10 scopes, including equipment, shields, cobwebs, chest loot, sound targeting,
+squad behavior, survival progression and world navigation.
 
-Pillaring, bridging, barricades, mining and general block construction remain
-future work. A possible future boundary is `TacticalWorldActionController`
-with separate `PillarUpAction` and `BridgeGapAction` implementations.
+World navigation is implemented through `TacticalWorldActionController`, with
+separate `PillarUpAction`, `BridgeGapAction` and mining integrations. The
+navigation tests cover safe placement, limits, cooldowns and mob-griefing
+behavior.
 
   ## Overview
 

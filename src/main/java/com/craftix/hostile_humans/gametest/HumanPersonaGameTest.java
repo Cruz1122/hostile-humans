@@ -23,7 +23,7 @@ public final class HumanPersonaGameTest {
     private HumanPersonaGameTest() {
     }
 
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "personaDataset", timeoutTicks = 40)
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "persona", timeoutTicks = 40)
     public static void personaDatasetLoads(GameTestHelper helper) {
         PersonaRegistry registry = PersonaRegistry.get();
         helper.assertTrue(registry.size() == 731, "Expected 731 personas");
@@ -36,7 +36,7 @@ public final class HumanPersonaGameTest {
         helper.succeed();
     }
 
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "personaTier", timeoutTicks = 40)
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "persona", timeoutTicks = 40)
     public static void personaMatchesEntityTier(GameTestHelper helper) {
         Human tierOne = createHuman(helper, new BlockPos(1, 1, 1));
         tierOne.setCombatSkillTierOverride(CombatSkillTier.T1);
@@ -54,7 +54,7 @@ public final class HumanPersonaGameTest {
         helper.succeed();
     }
 
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "personaFriendly", timeoutTicks = 40)
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "persona", timeoutTicks = 40)
     public static void sameFactionIsFriendly(GameTestHelper helper) {
         Human first = createHuman(helper, new BlockPos(1, 1, 1));
         Human second = createHuman(helper, new BlockPos(3, 1, 1));
@@ -68,7 +68,7 @@ public final class HumanPersonaGameTest {
         helper.succeed();
     }
 
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "personaHostile", timeoutTicks = 40)
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "persona", timeoutTicks = 40)
     public static void differentFactionsAreHostile(GameTestHelper helper) {
         Human first = createHuman(helper, new BlockPos(1, 1, 1));
         Human second = createHuman(helper, new BlockPos(3, 1, 1));
@@ -82,7 +82,7 @@ public final class HumanPersonaGameTest {
         helper.succeed();
     }
 
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "personaUnique", timeoutTicks = 40)
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "persona", timeoutTicks = 40)
     public static void personaCannotBeReservedTwice(GameTestHelper helper) {
         Human first = createHuman(helper, new BlockPos(1, 1, 1));
         Human second = createHuman(helper, new BlockPos(3, 1, 1));
@@ -94,7 +94,7 @@ public final class HumanPersonaGameTest {
         helper.succeed();
     }
 
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "personaDeath", timeoutTicks = 40)
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "persona", timeoutTicks = 40)
     public static void personaReleasedOnDeath(GameTestHelper helper) {
         Human human = createHuman(helper, new BlockPos(1, 1, 1));
         helper.assertTrue(human.setPersonaId("minemanner"), "Minemanner could not be reserved");
@@ -107,7 +107,7 @@ public final class HumanPersonaGameTest {
         });
     }
 
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "personaNbt", timeoutTicks = 40)
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "persona", timeoutTicks = 40)
     public static void personaPersistsThroughNbt(GameTestHelper helper) {
         Human original = createHuman(helper, new BlockPos(1, 1, 1));
         helper.assertTrue(original.setPersonaId("swight"), "Swight could not be reserved");

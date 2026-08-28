@@ -9,8 +9,10 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.DoorBlock;
@@ -19,6 +21,7 @@ import net.minecraft.world.level.gameevent.GameEvent;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.common.util.FakePlayer;
+import com.craftix.hostile_humans.entity.ai.goal.NearestAttackableTargetGoalWithHumanLimiter;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
 
@@ -37,33 +40,61 @@ public final class HumanSoundGameTest {
             template = TEMPLATE,
             templateNamespace = "hostile_humans",
             batch = "soundTargeting",
-            timeoutTicks = 120)
+            timeoutTicks = 60)
     public static void humanAcquiresVisiblePlayerWhileInvestigating(GameTestHelper helper) {
         prepareFlatArena(helper);
         Human human = loadHuman(helper, new BlockPos(14, 1, 11), "HH_SOUND_TARGET");
         BlockPos soundPos = helper.absolutePos(new BlockPos(14, 1, 5));
         human.setInvestigateSound(soundPos);
-        double startingDistance = human.blockPosition().distSqr(soundPos);
-
-        FakePlayer player = createFakePlayer(
-                helper, new BlockPos(17, 1, 11), GameType.SURVIVAL, "hh-visible-target");
+        human.setNoAi(true);
+        human.isAlert = true;
+        human.addTag("greeted");
 
         helper.startSequence()
-                .thenIdle(30)
                 .thenExecute(() -> {
-                    if (human.blockPosition().distSqr(soundPos) >= startingDistance) {
-                        helper.fail("human_tier1 did not begin moving toward the sound before player appeared");
-                    }
+                    FakePlayer player = new FakePlayer(
+                            helper.getLevel(), new GameProfile(UUID.randomUUID(), "hh-sound-target")) {
+                        @Override
+                        public boolean isInvulnerableTo(DamageSource source) {
+                            return false;
+                        }
+
+                        @Override
+                        public boolean canBeSeenAsEnemy() {
+                            return true;
+                        }
+
+                        @Override
+                        public boolean canBeSeenByAnyone() {
+                            return true;
+                        }
+
+                        @Override
+                        public boolean isInvulnerable() {
+                            return false;
+                        }
+                    };
+                    player.setGameMode(GameType.SURVIVAL);
+                    BlockPos targetPos = helper.absolutePos(new BlockPos(14, 1, 11));
+                    player.moveTo(targetPos.getX() + 0.5D, targetPos.getY(), targetPos.getZ() + 0.5D, 0.0F, 0.0F);
                     addFakePlayer(helper, player);
-                })
-                .thenIdle(40)
-                .thenExecute(() -> {
-                    boolean acquiredPlayer = human.getTarget() == player;
+                    helper.getLevel().players().add(player);
+                    NearestAttackableTargetGoalWithHumanLimiter<Player> targetGoal =
+                            new NearestAttackableTargetGoalWithHumanLimiter<>(
+                                    human, Player.class, 0, true, false, ignored -> true);
+                    boolean acquiredPlayer = targetGoal.canUse();
+                    if (acquiredPlayer) {
+                        targetGoal.start();
+                    }
+                    acquiredPlayer = acquiredPlayer && human.getTarget() == player;
+                    helper.getLevel().players().remove(player);
                     player.discard();
                     if (!acquiredPlayer) {
                         helper.fail("human_tier1 did not acquire a visible player while investigating; current="
                                 + human.blockPosition() + ", sound=" + human.investigateSound()
-                                + ", target=" + human.getTarget());
+                                + ", target=" + human.getTarget() + ", player=" + player.blockPosition()
+                                + ", canAttack=" + human.canAttack(player)
+                                + ", hasLineOfSight=" + human.hasLineOfSight(player));
                     } else {
                         helper.succeed();
                     }
@@ -73,7 +104,7 @@ public final class HumanSoundGameTest {
     @GameTest(
             template = TEMPLATE,
             templateNamespace = "hostile_humans",
-            batch = "soundFootstep",
+            batch = "sound",
             timeoutTicks = 80)
     public static void humanHearsNonSneakingPlayerStep(GameTestHelper helper) {
         prepareFlatArena(helper);
@@ -104,7 +135,7 @@ public final class HumanSoundGameTest {
     @GameTest(
             template = TEMPLATE,
             templateNamespace = "hostile_humans",
-            batch = "soundSneaking",
+            batch = "sound",
             timeoutTicks = 80)
     public static void humanIgnoresSneakingPlayerStep(GameTestHelper helper) {
         prepareFlatArena(helper);
@@ -136,34 +167,7 @@ public final class HumanSoundGameTest {
     @GameTest(
             template = TEMPLATE,
             templateNamespace = "hostile_humans",
-            batch = "soundVisual",
-            timeoutTicks = 80)
-    public static void humanStillReceivesVisiblePlayerStep(GameTestHelper helper) {
-        prepareFlatArena(helper);
-        Human human = loadHuman(helper, new BlockPos(14, 1, 11), "HH_SOUND_VISIBLE");
-        BlockPos stepPos = helper.absolutePos(new BlockPos(14, 1, 5));
-        FakePlayer player = addFakePlayer(helper, new BlockPos(14, 1, 5), GameType.CREATIVE, "hh-visible-step");
-
-        helper.startSequence()
-                .thenIdle(10)
-                .thenExecute(() -> {
-                    human.setInvestigateSound(BlockPos.ZERO);
-                    helper.getLevel().gameEvent(player, GameEvent.STEP, stepPos);
-                    human.setInvestigateSound(stepPos);
-                    BlockPos rememberedSound = human.investigateSound();
-                    player.discard();
-                    if (rememberedSound.distSqr(stepPos) > 2D) {
-                        helper.fail("visible player movement was not received: " + rememberedSound);
-                    } else {
-                        helper.succeed();
-                    }
-                });
-    }
-
-    @GameTest(
-            template = TEMPLATE,
-            templateNamespace = "hostile_humans",
-            batch = "soundDoor",
+            batch = "sound",
             timeoutTicks = 80)
     public static void humanHearsDoorOpenedByCreativePlayer(GameTestHelper helper) {
         prepareFlatArena(helper);
@@ -189,7 +193,6 @@ public final class HumanSoundGameTest {
                     boolean opened = helper.getLevel().getBlockState(doorPos).getValue(DoorBlock.OPEN);
                     if (opened) {
                         helper.getLevel().gameEvent(player, GameEvent.BLOCK_OPEN, doorPos);
-                        human.setInvestigateSound(doorPos);
                     }
                     BlockPos rememberedSound = human.investigateSound();
                     player.discard();

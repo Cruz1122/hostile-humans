@@ -331,7 +331,7 @@ public final class SurvivalProgressionGoal extends Goal {
             if (level == 2) return hasStoneUsefulTools();
             return level == 0 && current < 0 || level == 1 && current < 1 || level == 2 && current < 2;
         }
-        if (level == 1) return current < 1;
+        if (level <= 1) return current < level;
         return level >= 3 && hasIronPickAndShield();
     }
 
@@ -383,6 +383,10 @@ public final class SurvivalProgressionGoal extends Goal {
     }
 
     private boolean selectAnimal(SquadNeeds needs) {
+        // Never start a hunt with a pickaxe or empty hand. The combat goal may
+        // otherwise inherit the current mining tool and leave the human
+        // staring at the animal drops after the first hit.
+        if (!equipHuntingWeapon()) return false;
         AABB area = human.getBoundingBox().inflate(Config.resourceScanRadius.get());
         List<net.minecraft.world.entity.animal.Animal> animals = human.level().getEntitiesOfClass(
                 net.minecraft.world.entity.animal.Animal.class, area,
@@ -398,6 +402,22 @@ public final class SurvivalProgressionGoal extends Goal {
         }
         mode = Mode.HUNT;
         return true;
+    }
+
+    private boolean equipHuntingWeapon() {
+        if (human.getMainHandItem().getItem() instanceof SwordItem) return true;
+        if (human.getData() == null) return false;
+        for (int slot = 0; slot < human.getData().getInventoryItemsSize(); slot++) {
+            ItemStack candidate = human.getData().getInventoryItem(slot);
+            if (!(candidate.getItem() instanceof SwordItem)) continue;
+            ItemStack previous = human.getMainHandItem().copy();
+            human.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, candidate.copy());
+            human.getData().setInventoryItem(slot, previous);
+            human.markEquipmentDirty();
+            human.queueEquipmentReevaluation();
+            return true;
+        }
+        return false;
     }
 
     private boolean selectFurnace(SquadNeeds needs) {

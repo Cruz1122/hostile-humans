@@ -64,7 +64,14 @@ public final class ItemLootGoal extends Goal {
 
     @Override
     public void tick() {
-        if (!isValidTarget()) return;
+        if (!isValidTarget()) {
+            // A hunt drop can exist before its vanilla pickup delay expires, or
+            // become uncollectable after another inventory change. Do not keep
+            // looking at or navigating toward a target that cannot be picked up.
+            itemTarget = null;
+            human.getNavigation().stop();
+            return;
+        }
         double distanceSqr = human.distanceToSqr(itemTarget);
         if (distanceSqr + 0.25D < closestDistanceSqr) {
             closestDistanceSqr = distanceSqr;

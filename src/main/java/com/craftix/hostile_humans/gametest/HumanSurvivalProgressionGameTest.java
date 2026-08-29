@@ -460,6 +460,21 @@ public final class HumanSurvivalProgressionGameTest {
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    public static void progressionCraftsStoneToolsWhenCobblestoneIsStocked(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.getData().setInventoryItem(20, new ItemStack(Items.COBBLESTONE, 9));
+        human.getData().setInventoryItem(21, new ItemStack(Items.STICK, 5));
+        helper.setBlock(new BlockPos(3, 1, 2), Blocks.CRAFTING_TABLE.defaultBlockState());
+        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
+        goal.canUse();
+        helper.assertTrue(SurvivalInventory.contains(human, stack -> stack.is(Items.STONE_PICKAXE))
+                        && SurvivalInventory.contains(human, stack -> stack.is(Items.STONE_AXE))
+                        && SurvivalInventory.contains(human, stack -> stack.is(Items.STONE_SWORD)),
+                "Stocked cobblestone did not produce the stone pickaxe, axe and sword");
+        cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
     public static void shapedStickRecipeUsesCorrectLayout(GameTestHelper helper) {
         Human human = human(helper, new BlockPos(2, 1, 2));
         human.getData().setInventoryItem(20, new ItemStack(Items.OAK_PLANKS, 2));

@@ -267,7 +267,10 @@ public final class SurvivalProgressionGoal extends Goal {
             int sticks = SurvivalInventory.count(human, Items.STICK);
             boolean step = planks < 8 && SurvivalInventory.count(human, stack -> stack.is(ItemTags.LOGS)) > 0
                     && SurvivalRecipeService.craft(human, stack -> stack.is(ItemTags.PLANKS), false).isPresent();
-            if (!step) step = sticks < 4 && planks > 0
+            // Pickaxe + axe + sword need five sticks in total. Four sticks
+            // are enough for the first wood tool but leave the human idle
+            // once it has a full cobblestone supply.
+            if (!step) step = sticks < 5 && planks > 0
                     && SurvivalRecipeService.craft(human, stack -> stack.is(Items.STICK), false).isPresent();
             boolean table = hasNearbyStation(Blocks.CRAFTING_TABLE);
             boolean knownTable = table || findStation(Blocks.CRAFTING_TABLE).isPresent();
@@ -286,16 +289,13 @@ public final class SurvivalProgressionGoal extends Goal {
 
     private boolean craftNeededGear() {
         if (SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof PickaxeItem
-                && allowedToolUpgrade(stack, PickaxeItem.class)
-                && GearUpgradePolicy.usefulUpgrade(human, stack), true).isPresent()) return true;
+                && allowedToolUpgrade(stack, PickaxeItem.class), true).isPresent()) return true;
         if (SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof AxeItem
-                && allowedToolUpgrade(stack, AxeItem.class)
-                && GearUpgradePolicy.usefulUpgrade(human, stack), true).isPresent()) return true;
+                && allowedToolUpgrade(stack, AxeItem.class), true).isPresent()) return true;
         // Mining tools take precedence over combat upgrades so the human can
         // immediately continue gathering stone after the first wood stage.
         if (SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof SwordItem
-                && allowedToolUpgrade(stack, SwordItem.class)
-                && GearUpgradePolicy.usefulUpgrade(human, stack), true).isPresent()) return true;
+                && allowedToolUpgrade(stack, SwordItem.class), true).isPresent()) return true;
         if (!SurvivalInventory.contains(human, stack -> stack.is(Items.SHIELD))
                 && SurvivalRecipeService.craft(human, stack -> stack.is(Items.SHIELD), true).isPresent()) return true;
         // Iron armor is an opportunistic upgrade. Keep the iron needed by the
@@ -464,14 +464,11 @@ public final class SurvivalProgressionGoal extends Goal {
 
     private boolean canCraftNeededGear() {
         if (SurvivalRecipeService.canCraft(human, stack -> stack.getItem() instanceof PickaxeItem
-                && allowedToolUpgrade(stack, PickaxeItem.class)
-                && GearUpgradePolicy.usefulUpgrade(human, stack), true)) return true;
+                && allowedToolUpgrade(stack, PickaxeItem.class), true)) return true;
         if (SurvivalRecipeService.canCraft(human, stack -> stack.getItem() instanceof AxeItem
-                && allowedToolUpgrade(stack, AxeItem.class)
-                && GearUpgradePolicy.usefulUpgrade(human, stack), true)) return true;
+                && allowedToolUpgrade(stack, AxeItem.class), true)) return true;
         if (SurvivalRecipeService.canCraft(human, stack -> stack.getItem() instanceof SwordItem
-                && allowedToolUpgrade(stack, SwordItem.class)
-                && GearUpgradePolicy.usefulUpgrade(human, stack), true)) return true;
+                && allowedToolUpgrade(stack, SwordItem.class), true)) return true;
         if (!SurvivalInventory.contains(human, stack -> stack.is(Items.SHIELD))
                 && SurvivalRecipeService.canCraft(human, stack -> stack.is(Items.SHIELD), true)) return true;
         if (SurvivalInventory.count(human, Items.IRON_INGOT) > mandatoryIronReserve()

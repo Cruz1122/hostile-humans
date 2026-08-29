@@ -17,6 +17,7 @@ import com.craftix.hostile_humans.entity.ai.squad.SquadAlertReason;
 import com.craftix.hostile_humans.entity.ai.squad.SquadManager;
 import com.craftix.hostile_humans.entity.ai.survival.SurvivalClaimManager;
 import com.craftix.hostile_humans.entity.ai.survival.SurvivalProgressionGoal;
+import com.craftix.hostile_humans.entity.ai.survival.SurvivalSnapshot;
 import com.craftix.hostile_humans.entity.equipment.MeleeWeaponSelector;
 import com.craftix.hostile_humans.persona.ActivePersonaSavedData;
 import com.craftix.hostile_humans.persona.PersonaDefinition;
@@ -148,6 +149,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     private UUID shieldDisablerTarget;
     private final CombatTacticsController combatTacticsController = new CombatTacticsController(this);
     private final TacticalWorldActionController tacticalWorldActionController = new TacticalWorldActionController(this);
+    private SurvivalProgressionGoal survivalProgressionGoal;
     private CombatIntent combatIntent = CombatIntent.idle(com.craftix.hostile_humans.entity.ai.combat.ShieldState.UNAVAILABLE);
     @Nullable
     private CombatSkillTier combatSkillTierOverride;
@@ -187,6 +189,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     // Investigate Sound
     private static final int SOUND_LISTENER_RANGE = 16;
     public BlockPos investigateSound = BlockPos.ZERO;
+    private long survivalSoundSuppressedUntil = Long.MIN_VALUE;
     private final DynamicGameEventListener<GameEventListener> dynamicGameEventListener;
     private final VibrationSystem.User vibrationUser;
 
@@ -206,6 +209,16 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
 		this.investigateSound = investigateSound.offset(this.random.nextInt(-1, 2), 0, this.random.nextInt(-1, 2));
 	}
+
+    /** Suppresses only synchronous world events caused by this human's action. */
+    public void suppressSurvivalSounds(int ticks) {
+        this.survivalSoundSuppressedUntil = Math.max(this.survivalSoundSuppressedUntil,
+                level().getGameTime() + Math.max(0, ticks));
+    }
+
+    public boolean isSurvivalSoundSuppressed() {
+        return level().getGameTime() <= survivalSoundSuppressedUntil;
+    }
 
     @Override
     public void updateDynamicGameEventListener(
@@ -264,6 +277,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
                     || !level.getWorldBorder().isWithinBounds(sourcePos)) {
                 return false;
             }
+            if (Human.this.isSurvivalSoundSuppressed()) return false;
             if (event == null || !event.is(net.minecraft.tags.GameEventTags.VIBRATIONS)) {
                 return false;
             }
@@ -479,12 +493,15 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         goalSelector.addGoal(0, new FindWaterOnFireGoal(this, 1.2D));
         goalSelector.addGoal(0, new RunFromTarget(this, 6.0F, 1.0D, 1.2D));
         goalSelector.addGoal(0, new AvoidTNTGoal(this, 6.0F, 1.0D, 1.2D));
-        goalSelector.addGoal(0, new InvestigateSoundGoal(this, 1.0F));
+        // Sound investigation is fallback work. It must not repeatedly reset
+        // an in-progress mining, crafting, or hunting action.
+        goalSelector.addGoal(6, new InvestigateSoundGoal(this, 1.0F));
         goalSelector.addGoal(6, new SquadInvestigateGoal(this, 1.0D));
         goalSelector.addGoal(1, new PotionRangedAttackGoal(this, 1.0, 10, 10));
         goalSelector.addGoal(3, new RaiseShieldGoal(this));
         goalSelector.addGoal(-1, new ItemLootGoal(this, 1.0D));
-        goalSelector.addGoal(5, new SurvivalProgressionGoal(this));
+        survivalProgressionGoal = new SurvivalProgressionGoal(this);
+        goalSelector.addGoal(5, survivalProgressionGoal);
         goalSelector.addGoal(7, new ChestLootGoal(this, 0.8D));
         goalSelector.addGoal(8, new SquadCohesionGoal(this, 0.8D));
         goalSelector.addGoal(-30, new LookForBedGoal(this, 1.0F));
@@ -1690,9 +1707,14 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     /** Keeps a deliberately selected mining tool from being replaced by combat reevaluation. */
     public void preserveMiningToolSelection() {
+        preserveActionWeaponSelection();
+    }
+
+    /** Keeps a weapon selected by an active world action from being replaced on the next AI tick. */
+    public void preserveActionWeaponSelection() {
         this.equipmentDirty = false;
         this.equipmentReevaluationQueued = false;
-        this.miningToolLockTicks = 2;
+        this.miningToolLockTicks = Math.max(this.miningToolLockTicks, 2);
     }
 
     /** Defers selector goal mutation until after the current AI goal tick. */
@@ -1741,6 +1763,13 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         return tacticalWorldActionController;
     }
 
+    public SurvivalSnapshot getSurvivalSnapshot() {
+        return survivalProgressionGoal == null
+                ? new SurvivalSnapshot(com.craftix.hostile_humans.entity.ai.survival.SurvivalState.DORMANT,
+                null, null, Long.MIN_VALUE)
+                : survivalProgressionGoal.snapshot();
+    }
+
     @Nullable
     public CombatSkillTier getCombatSkillTierOverride() {
         return this.combatSkillTierOverride;
@@ -1787,6 +1816,14 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         if (getTarget() != null) return ItemStack.EMPTY;
 
         EquipmentSlot equipmentslot = getEquipmentSlotForItem(stack);
+        boolean wearableOrWeapon = equipmentslot.getType() == EquipmentSlot.Type.ARMOR
+                || HumanUtil.isRangedWeapon(stack) || HumanUtil.isShield(stack)
+                || HumanUtil.isTrident(stack) || MeleeWeaponSelector.isMeleeCandidate(stack)
+                || stack.is(Items.TOTEM_OF_UNDYING);
+        // Vanilla assigns ordinary items to MAINHAND. Survival materials such
+        // as logs, coal, ore and food must remain in inventory so crafting and
+        // needs evaluation can consume/count them.
+        if (!wearableOrWeapon) return ItemStack.EMPTY;
         ItemStack itemstack = this.getItemBySlot(equipmentslot);
         boolean flag = this.canReplaceCurrentItem(stack, itemstack);
         if (flag && this.canHoldItem(stack) && !(stack.getItem() instanceof TieredItem)) {

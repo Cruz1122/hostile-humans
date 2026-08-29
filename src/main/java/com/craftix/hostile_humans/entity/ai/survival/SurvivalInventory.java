@@ -3,11 +3,12 @@ package com.craftix.hostile_humans.entity.ai.survival;
 import com.craftix.hostile_humans.entity.data.HumanData;
 import com.craftix.hostile_humans.entity.entities.Human;
 import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ItemLike;
 
 import java.util.function.Predicate;
+import java.util.ArrayList;
+import java.util.List;
 
 public final class SurvivalInventory {
     private SurvivalInventory() {}
@@ -40,30 +41,42 @@ public final class SurvivalInventory {
         return total;
     }
 
-    public static int removeInventory(Human human, Predicate<ItemStack> predicate, int requested) {
-        if (requested <= 0 || human.getData() == null) return 0;
-        int removed = 0;
-        for (int slot = 0; slot < human.getData().getInventoryItemsSize() && removed < requested; slot++) {
-            ItemStack stack = human.getData().getInventoryItem(slot);
-            if (!predicate.test(stack)) continue;
-            int amount = Math.min(requested - removed, stack.getCount());
-            stack.shrink(amount);
-            if (stack.isEmpty()) human.getData().setInventoryItem(slot, ItemStack.EMPTY);
-            removed += amount;
-        }
-        return removed;
-    }
-
     public static boolean canStore(Human human, ItemStack offered) {
         if (human.getData() == null || offered.isEmpty()) return false;
-        ItemStack probe = offered.copy();
-        HumanData data = human.getData();
-        for (int slot = 0; slot < data.getInventoryItemsSize(); slot++) {
-            ItemStack existing = data.getInventoryItem(slot);
-            if (existing.isEmpty()) return true;
-            if (ItemStack.isSameItemSameTags(existing, probe) && existing.getCount() < existing.getMaxStackSize()) return true;
+        return canStore(human, List.of(offered));
+    }
+
+    /** Simulates all inserts against one snapshot, including stack capacity. */
+    public static boolean canStore(Human human, List<ItemStack> offered) {
+        if (human.getData() == null) return false;
+        List<ItemStack> simulated = new ArrayList<>();
+        for (ItemStack stack : human.getData().getInventoryItems()) simulated.add(stack.copy());
+        for (ItemStack source : offered) {
+            if (source == null || source.isEmpty()) continue;
+            ItemStack remaining = source.copy();
+            for (int slot = 0; slot < simulated.size(); slot++) {
+                if (remaining.isEmpty()) break;
+                ItemStack existing = simulated.get(slot);
+                if (!existing.isEmpty() && ItemStack.isSameItemSameTags(existing, remaining)) {
+                    int moved = Math.min(remaining.getCount(), existing.getMaxStackSize() - existing.getCount());
+                    if (moved > 0) {
+                        existing.grow(moved);
+                        remaining.shrink(moved);
+                    }
+                }
+            }
+            for (int slot = 0; slot < simulated.size(); slot++) {
+                if (remaining.isEmpty()) break;
+                ItemStack existing = simulated.get(slot);
+                if (existing.isEmpty()) {
+                    int moved = Math.min(remaining.getCount(), remaining.getMaxStackSize());
+                    simulated.set(slot, remaining.copyWithCount(moved));
+                    remaining.shrink(moved);
+                }
+            }
+            if (!remaining.isEmpty()) return false;
         }
-        return false;
+        return true;
     }
 
     public static int insert(Human human, ItemStack offered) {

@@ -41,8 +41,10 @@ public final class SurvivalProgressionGoal extends Goal {
     private static final int RESOURCE_PATH_TIMEOUT_TICKS = 35;
     private static final int STATION_PATH_TIMEOUT_TICKS = 35;
     private static final int EXPLORE_TIMEOUT_TICKS = 140;
+    private static final int ARROW_RESERVE = 24;
 
     private final Human human;
+    private final SurvivalController controller;
     private SquadNeed need;
     private Mode mode;
     private BlockPos targetPos;
@@ -55,53 +57,100 @@ public final class SurvivalProgressionGoal extends Goal {
     private int nextDecisionTick;
     private int navigationStalledTicks;
     private final Map<BlockPos, Integer> failedResourceUntil = new HashMap<>();
+    private final Map<net.minecraft.world.level.block.Block, Optional<BlockPos>> stationCache = new HashMap<>();
+    private int stationCacheTick = Integer.MIN_VALUE;
 
     public SurvivalProgressionGoal(Human human) {
         this.human = human;
+        this.controller = new SurvivalController(human);
         setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK));
+    }
+
+    public SurvivalSnapshot snapshot() {
+        return controller.snapshot();
     }
 
     @Override
     public boolean canUse() {
         // Survival decisions are deliberately less urgent than combat and
         // should not perform world scans every time GoalSelector checks us.
-        if (!eligible() || human.tickCount < nextDecisionTick) return false;
+        if (!eligible() || human.tickCount < nextDecisionTick || !controller.requestAssessment()) return false;
+        failedResourceUntil.entrySet().removeIf(entry -> entry.getValue() <= human.tickCount);
         nextDecisionTick = nextDecisionTick();
+        controller.beginPlanning();
+        if (planNextAction()) return true;
+        controller.plan(null);
+        return false;
+    }
+
+    /**
+     * Performs one bounded planning pass. Selection mutates only this goal's
+     * intent/lease; world mutation is left to the active task tick.
+     */
+    private boolean planNextAction() {
         SquadNeeds needs = SquadNeedsEvaluator.evaluate(human);
-        if (tryShare(needs)) return false;
+        if (tryShare(needs)) {
+            controller.completeImmediate(new SurvivalIntent(SurvivalTask.SHARE, SurvivalObjective.FOOD));
+            return false;
+        }
         if (tryImmediateCraft()) return false;
+
         List<SquadNeed> neededResources = Arrays.stream(SquadNeed.values()).filter(needs::needs).toList();
         Optional<LocalResourceScanner.ResourceTarget> resource = LocalResourceScanner.findReachableFirst(human, neededResources,
                 pos -> failedResourceUntil.getOrDefault(pos, 0) > human.tickCount);
         if (resource.isPresent()) {
-            var selected = resource.get();
+            LocalResourceScanner.ResourceTarget selected = resource.get();
             if (SurvivalClaimManager.claimResource(human, selected.pos())) {
                 need = selected.need();
                 targetPos = selected.pos();
                 mode = Mode.RESOURCE;
+                controller.plan(new SurvivalIntent(SurvivalTask.GATHER, objectiveFor(selected.need())));
                 return true;
             }
         }
-        if (needs.needs(SquadNeed.FOOD) && selectAnimal(needs)) return true;
-        if (selectFurnace(needs)) return true;
-        if (selectCraftingTable()) return true;
+        if ((needs.needs(SquadNeed.FOOD) || needs.needs(SquadNeed.FEATHERS)) && selectAnimal(needs)) {
+            controller.plan(new SurvivalIntent(SurvivalTask.HUNT, SurvivalObjective.FOOD));
+            return true;
+        }
+        if (selectFurnace(needs)) {
+            controller.plan(new SurvivalIntent(SurvivalTask.SMELT, SurvivalObjective.IRON_GEAR));
+            return true;
+        }
+        if (selectCraftingTable()) {
+            controller.plan(new SurvivalIntent(SurvivalTask.CRAFT, SurvivalObjective.IRON_GEAR));
+            return true;
+        }
         need = needs.highestPriority().orElse(null);
-        if (need == null) return false;
-        return selectExplorationTarget();
+        if (need == null || !selectExplorationTarget()) return false;
+        controller.plan(new SurvivalIntent(SurvivalTask.EXPLORE, SurvivalObjective.EXPLORATION));
+        return true;
+    }
+
+    private static SurvivalObjective objectiveFor(SquadNeed need) {
+        return SurvivalPlanner.objectiveFor(need);
     }
 
     @Override
     public boolean canContinueToUse() {
+        // Exploration and hunting are fallback work. Reconsider them as soon
+        // as a newly nearby ore target becomes actionable instead of walking
+        // past it until the current action times out.
+        if (mode == Mode.EXPLORE && actionTicks % 10 == 0
+                && hasNearbyPriorityResource()) return false;
+        if (mode == null) return false;
         if (mode == Mode.HUNT) {
-            return eligible() && actionTicks++ < 160 && animal != null && animal.isAlive();
+            return activeActionEligible() && actionTicks < 160
+                    && (animal != null || controller.snapshot().state() == SurvivalState.PLANNING);
         }
-        return eligible() && actionTicks++ < (mode == Mode.EXPLORE ? EXPLORE_TIMEOUT_TICKS : 160) && mode != null;
+        boolean actionEligible = mode == Mode.EXPLORE ? eligible() : activeActionEligible();
+        return actionEligible && actionTicks < (mode == Mode.EXPLORE ? EXPLORE_TIMEOUT_TICKS : 160);
     }
 
     @Override
     public void start() {
         actionTicks = 0;
         navigationStalledTicks = 0;
+        controller.ensureActing();
         if (mode == Mode.HUNT && animal != null) {
             huntStalledTicks = 0;
             huntAttackCooldown = Math.floorMod(human.getUUID().hashCode(), 10);
@@ -114,11 +163,30 @@ public final class SurvivalProgressionGoal extends Goal {
 
     @Override
     public void tick() {
+        actionTicks++;
         if (mode == Mode.HUNT) {
+            if (animal == null && controller.snapshot().state() == SurvivalState.PLANNING) {
+                if (!planNextAction()) {
+                    controller.plan(null);
+                    mode = null;
+                }
+                return;
+            }
             tickHunt();
             return;
         }
-        if (!eligible()) return;
+        if (mode == null) return;
+        if (mode == Mode.EXPLORE ? !eligible() : !activeActionEligible()) {
+            controller.suspend();
+            return;
+        }
+        if (controller.snapshot().state() == SurvivalState.PLANNING && targetPos == null) {
+            if (!planNextAction()) {
+                controller.plan(null);
+                mode = null;
+            }
+            return;
+        }
         if (mode == Mode.RESOURCE) tickResource();
         else if (mode == Mode.STATION) tickStation();
         else if (mode == Mode.CRAFTING) tickCrafting();
@@ -143,11 +211,24 @@ public final class SurvivalProgressionGoal extends Goal {
         animal = null;
         mode = null;
         need = null;
+        controller.stop(SurvivalFailureReason.INTERRUPTED);
     }
 
     private void tickHunt() {
-        if (!eligible() || animal == null || !animal.isAlive()) {
+        if (!activeActionEligible() || animal == null) {
             mode = null;
+            return;
+        }
+        if (!animal.isAlive()) {
+            if (controller.snapshot().state() == SurvivalState.NAVIGATE) controller.arrived();
+            if (controller.snapshot().state() == SurvivalState.ACT) controller.collect();
+            if (controller.snapshot().state() == SurvivalState.COLLECT) controller.verify();
+            if (controller.snapshot().state() == SurvivalState.VERIFY) controller.succeeded();
+            animal = null;
+            return;
+        }
+        if (!equipHuntingWeapon()) {
+            abortAction();
             return;
         }
         var target = (net.minecraft.world.entity.LivingEntity) animal;
@@ -156,6 +237,7 @@ public final class SurvivalProgressionGoal extends Goal {
         double attackRangeSqr = Math.max(9.0D, human.getMeleeAttackRangeSqr(target));
         if (distanceSqr <= attackRangeSqr) {
             human.getNavigation().stop();
+            if (controller.snapshot().state() == SurvivalState.NAVIGATE) controller.arrived();
             if (huntAttackCooldown-- <= 0) {
                 boolean hit = human.doHurtTarget(target);
                 if (!hit) {
@@ -182,9 +264,11 @@ public final class SurvivalProgressionGoal extends Goal {
             if (targetPos != null) SurvivalClaimManager.releaseResource(human, targetPos);
             targetPos = null;
             mode = null;
+            controller.fail(SurvivalFailureReason.TARGET_CHANGED, 10);
             nextDecisionTick = nextDecisionTick();
             return;
         }
+        if (controller.snapshot().state() == SurvivalState.ACQUIRE) controller.acquired();
         SurvivalClaimManager.claimResource(human, targetPos);
         if (human.distanceToSqr(targetPos.getX() + 0.5D, targetPos.getY() + 0.5D, targetPos.getZ() + 0.5D) > 9.0D) {
             if (human.getNavigation().isDone()) {
@@ -197,6 +281,7 @@ public final class SurvivalProgressionGoal extends Goal {
             return;
         }
         human.getNavigation().stop();
+        controller.ensureActing();
         human.getLookControl().setLookAt(targetPos.getX() + 0.5D, targetPos.getY() + 0.5D, targetPos.getZ() + 0.5D);
         if (breaker == null) breaker = new ProgressiveBlockBreaker(human, targetPos);
         WorldActionResult result = breaker.tick();
@@ -205,8 +290,15 @@ public final class SurvivalProgressionGoal extends Goal {
             SquadNeedsEvaluator.invalidate(human);
             breaker = null;
             targetPos = null;
-            mode = null;
-            nextDecisionTick = nextDecisionTick();
+            if (result == WorldActionResult.SUCCESS) {
+                controller.completeTask();
+                // Keep the goal alive in PLANNING so the next resource is
+                // selected by the same controller on the next server tick.
+            } else {
+                controller.fail(SurvivalFailureReason.TARGET_CHANGED, 10);
+                mode = null;
+                nextDecisionTick = nextDecisionTick();
+            }
         }
     }
 
@@ -215,9 +307,11 @@ public final class SurvivalProgressionGoal extends Goal {
             if (targetPos != null) SurvivalClaimManager.releaseStation(human, targetPos);
             targetPos = null;
             mode = null;
+            controller.fail(SurvivalFailureReason.STATION_UNAVAILABLE, 20);
             nextDecisionTick = nextDecisionTick();
             return;
         }
+        controller.ensureActing();
         SurvivalClaimManager.claimStation(human, targetPos);
         if (human.distanceToSqr(targetPos.getX() + 0.5D, targetPos.getY() + 0.5D, targetPos.getZ() + 0.5D) > 9.0D) {
             if (human.getNavigation().isDone()) {
@@ -227,12 +321,21 @@ public final class SurvivalProgressionGoal extends Goal {
             return;
         }
         human.getNavigation().stop();
+        controller.ensureActing();
         FurnaceOperation.Result result = FurnaceOperation.tick(human, targetPos);
-        if (result != FurnaceOperation.Result.WAITING) {
+        if (result == FurnaceOperation.Result.WAITING) {
+            if (controller.snapshot().state() == SurvivalState.ACT) controller.waitForWorld();
+        } else {
+            controller.ensureActing();
             SurvivalClaimManager.releaseStation(human, targetPos);
             targetPos = null;
-            mode = null;
-            nextDecisionTick = nextDecisionTick();
+            if (result == FurnaceOperation.Result.FAILED) {
+                controller.fail(SurvivalFailureReason.STATION_UNAVAILABLE, 20);
+                mode = null;
+                nextDecisionTick = nextDecisionTick();
+            } else {
+                controller.completeTask();
+            }
         }
     }
 
@@ -241,9 +344,11 @@ public final class SurvivalProgressionGoal extends Goal {
             if (targetPos != null) SurvivalClaimManager.releaseStation(human, targetPos);
             targetPos = null;
             mode = null;
+            controller.fail(SurvivalFailureReason.STATION_UNAVAILABLE, 20);
             nextDecisionTick = nextDecisionTick();
             return;
         }
+        controller.ensureActing();
         SurvivalClaimManager.claimStation(human, targetPos);
         if (human.distanceToSqr(targetPos.getX() + 0.5D, targetPos.getY() + 0.5D, targetPos.getZ() + 0.5D) > 9.0D) {
             if (human.getNavigation().isDone()) {
@@ -253,11 +358,11 @@ public final class SurvivalProgressionGoal extends Goal {
             return;
         }
         human.getNavigation().stop();
+        controller.ensureActing();
         tryImmediateCraft();
         SurvivalClaimManager.releaseStation(human, targetPos);
         targetPos = null;
-        mode = null;
-        nextDecisionTick = nextDecisionTick();
+        controller.completeTask();
     }
 
     private boolean tryImmediateCraft() {
@@ -279,10 +384,15 @@ public final class SurvivalProgressionGoal extends Goal {
             if (!knownTable && placeStation(Items.CRAFTING_TABLE, Blocks.CRAFTING_TABLE)) step = true;
             table = hasNearbyStation(Blocks.CRAFTING_TABLE);
             if (table) step |= craftNeededGear();
-            if (table && !SurvivalInventory.contains(human, stack -> stack.getItem() instanceof BowItem))
+            if (table && !hasBow())
                 step |= SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof BowItem, true).isPresent();
+            if (table && hasBow() && SurvivalInventory.count(human, Items.ARROW) < ARROW_RESERVE)
+                step |= SurvivalRecipeService.craft(human, stack -> stack.is(Items.ARROW), true).isPresent();
             if (!step) break;
             changed = true;
+        }
+        if (changed && controller.snapshot().state() == SurvivalState.PLANNING) {
+            controller.completeImmediate(new SurvivalIntent(SurvivalTask.CRAFT, SurvivalObjective.IRON_GEAR));
         }
         return changed;
     }
@@ -395,6 +505,10 @@ public final class SurvivalProgressionGoal extends Goal {
                         && needs.needs(SquadNeed.FEATHERS) ? 0 : 1)
                 .thenComparingDouble(candidate -> human.distanceToSqr(candidate))).orElse(null);
         if (animal == null) return false;
+        if (!SurvivalQueryBudget.tryPath(human)) {
+            animal = null;
+            return false;
+        }
         var path = human.getNavigation().createPath(animal, 1);
         if (path == null || !path.canReach()) {
             animal = null;
@@ -405,7 +519,10 @@ public final class SurvivalProgressionGoal extends Goal {
     }
 
     private boolean equipHuntingWeapon() {
-        if (human.getMainHandItem().getItem() instanceof SwordItem) return true;
+        if (human.getMainHandItem().getItem() instanceof SwordItem) {
+            human.preserveActionWeaponSelection();
+            return true;
+        }
         if (human.getData() == null) return false;
         for (int slot = 0; slot < human.getData().getInventoryItemsSize(); slot++) {
             ItemStack candidate = human.getData().getInventoryItem(slot);
@@ -413,11 +530,18 @@ public final class SurvivalProgressionGoal extends Goal {
             ItemStack previous = human.getMainHandItem().copy();
             human.setItemSlot(net.minecraft.world.entity.EquipmentSlot.MAINHAND, candidate.copy());
             human.getData().setInventoryItem(slot, previous);
-            human.markEquipmentDirty();
-            human.queueEquipmentReevaluation();
+            human.preserveActionWeaponSelection();
             return true;
         }
         return false;
+    }
+
+    private boolean hasNearbyPriorityResource() {
+        SquadNeeds needs = SquadNeedsEvaluator.evaluate(human);
+        List<SquadNeed> priorityNeeds = List.of(SquadNeed.FUEL, SquadNeed.IRON, SquadNeed.GOLD, SquadNeed.DIAMOND)
+                .stream().filter(needs::needs).toList();
+        return LocalResourceScanner.findReachableFirst(human, priorityNeeds,
+                pos -> failedResourceUntil.getOrDefault(pos, 0) > human.tickCount).isPresent();
     }
 
     private boolean selectFurnace(SquadNeeds needs) {
@@ -452,14 +576,24 @@ public final class SurvivalProgressionGoal extends Goal {
     }
 
     private boolean selectCraftingTable() {
-        if (!canCraftNeededGear()
-                && (SurvivalInventory.contains(human, stack -> stack.getItem() instanceof BowItem)
-                || !SurvivalRecipeService.canCraft(human, stack -> stack.getItem() instanceof BowItem, true))) return false;
+        if (!canCraftNeededGear() && !canCraftRangedSupport()) return false;
         Optional<BlockPos> table = findStation(Blocks.CRAFTING_TABLE);
         if (table.isEmpty() || !SurvivalClaimManager.claimStation(human, table.get())) return false;
         targetPos = table.get();
         mode = Mode.CRAFTING;
         return true;
+    }
+
+    private boolean canCraftRangedSupport() {
+        if (!hasBow()) {
+            return SurvivalRecipeService.canCraft(human, stack -> stack.getItem() instanceof BowItem, true);
+        }
+        return SurvivalInventory.count(human, Items.ARROW) < ARROW_RESERVE
+                && SurvivalRecipeService.canCraft(human, stack -> stack.is(Items.ARROW), true);
+    }
+
+    private boolean hasBow() {
+        return SurvivalInventory.contains(human, stack -> stack.getItem() instanceof BowItem);
     }
 
     private boolean canCraftNeededGear() {
@@ -483,15 +617,23 @@ public final class SurvivalProgressionGoal extends Goal {
     }
 
     private Optional<BlockPos> findStation(net.minecraft.world.level.block.Block block) {
+        if (stationCacheTick != human.tickCount) {
+            stationCache.clear();
+            stationCacheTick = human.tickCount;
+        }
+        Optional<BlockPos> cached = stationCache.get(block);
+        if (cached != null) return cached;
         int radius = Config.resourceScanRadius.get();
         BlockPos origin = human.blockPosition();
-        return BlockPos.betweenClosedStream(origin.offset(-radius, -4, -radius), origin.offset(radius, 4, radius))
+        Optional<BlockPos> result = BlockPos.betweenClosedStream(origin.offset(-radius, -4, -radius), origin.offset(radius, 4, radius))
                 .filter(human.level()::hasChunkAt)
                 .filter(pos -> human.level().getBlockState(pos).is(block))
                 .filter(pos -> !SurvivalClaimManager.stationClaimedByOther(human, pos))
                 .filter(pos -> stationReachable(pos))
                 .map(BlockPos::immutable)
                 .min(Comparator.comparingDouble(pos -> pos.distSqr(origin)));
+        stationCache.put(block, result);
+        return result;
     }
 
     private boolean hasNearbyStation(net.minecraft.world.level.block.Block block) {
@@ -510,6 +652,7 @@ public final class SurvivalProgressionGoal extends Goal {
         }
         return Direction.Plane.HORIZONTAL.stream()
                 .map(station::relative)
+                .filter(pos -> SurvivalQueryBudget.tryPath(human))
                 .map(pos -> human.getNavigation().createPath(pos, 0))
                 .anyMatch(path -> path != null && path.canReach());
     }
@@ -521,6 +664,7 @@ public final class SurvivalProgressionGoal extends Goal {
         for (Direction direction : Direction.Plane.HORIZONTAL) {
             BlockPos pos = human.blockPosition().relative(direction);
             if (WorldActionSupport.place(human, pos, station.get(), block.defaultBlockState(), direction.getOpposite())) {
+                stationCache.clear();
                 SquadNeedsEvaluator.invalidate(human);
                 return true;
             }
@@ -537,6 +681,7 @@ public final class SurvivalProgressionGoal extends Goal {
             BlockPos candidate = new BlockPos(human.blockPosition().getX() + x, y, human.blockPosition().getZ() + z);
             if (Math.abs(x) + Math.abs(z) + Math.abs(y - human.blockPosition().getY()) <= 2
                     || !human.level().hasChunkAt(candidate)) continue;
+            if (!SurvivalQueryBudget.tryPath(human)) break;
             var path = human.getNavigation().createPath(candidate, 2);
             if (path == null || !path.canReach()) continue;
             targetPos = candidate;
@@ -575,9 +720,13 @@ public final class SurvivalProgressionGoal extends Goal {
     }
 
     private boolean eligible() {
+        return activeActionEligible() && !human.isInvestigatingSound();
+    }
+
+    private boolean activeActionEligible() {
         return Config.enableSurvivalProgression.get() && !human.level().isClientSide && human.isAlive()
                 && human.getTarget() == null && !WorldActionSupport.critical(human)
-                && !human.isInvestigatingSound() && !human.hasFreshSquadThreatMemory();
+                && !human.hasFreshSquadThreatMemory();
     }
 
 }

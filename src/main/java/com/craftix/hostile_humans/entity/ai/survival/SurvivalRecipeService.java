@@ -12,7 +12,6 @@ import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeType;
 import net.minecraft.world.item.crafting.ShapedRecipe;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -44,12 +43,6 @@ public final class SurvivalRecipeService {
             }
         }
         return false;
-    }
-
-    public static boolean hasRecipe(Human human, Predicate<ItemStack> desired) {
-        return human.level().getRecipeManager().getAllRecipesFor(RecipeType.CRAFTING).stream()
-                .map(recipe -> recipe.getResultItem(human.level().registryAccess()))
-                .anyMatch(desired);
     }
 
     private static List<CraftingRecipe> candidates(Human human, Predicate<ItemStack> desired) {
@@ -89,11 +82,14 @@ public final class SurvivalRecipeService {
         }
         if (!recipe.matches(grid, human.level())) return Optional.empty();
         ItemStack output = recipe.assemble(grid, human.level().registryAccess());
-        if (output.isEmpty() || !SurvivalInventory.canStore(human, output)) return Optional.empty();
+        if (output.isEmpty()) return Optional.empty();
         NonNullList<ItemStack> remainders = recipe.getRemainingItems(grid);
+        List<ItemStack> produced = new ArrayList<>();
+        produced.add(output);
         for (ItemStack remainder : remainders) {
-            if (!remainder.isEmpty() && !SurvivalInventory.canStore(human, remainder)) return Optional.empty();
+            if (!remainder.isEmpty()) produced.add(remainder);
         }
+        if (!SurvivalInventory.canStore(human, produced)) return Optional.empty();
         if (!consume) return Optional.of(output.copy());
         for (Reserved entry : reserved) if (entry.used) entry.stack.shrink(1);
         ItemStack insertion = output.copy();

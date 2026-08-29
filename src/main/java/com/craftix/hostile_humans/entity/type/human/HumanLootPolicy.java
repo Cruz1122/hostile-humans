@@ -24,7 +24,8 @@ public final class HumanLootPolicy {
                 || HumanUtil.isRangedWeapon(stack)
                 || HumanUtil.isTrident(stack)
                 || HumanUtil.isShield(stack)) return true;
-        if (human.isFood(stack) || stack.is(Items.COBWEB) || stack.getItem() instanceof ArrowItem) return true;
+        if (human.isFood(stack) || isRawAnimalFood(stack)
+                || stack.is(Items.COBWEB) || stack.getItem() instanceof ArrowItem) return true;
         EquipmentSlot equipmentSlot = LivingEntity.getEquipmentSlotForItem(stack);
         if (equipmentSlot.getType() == EquipmentSlot.Type.ARMOR
                 || stack.is(Items.TOTEM_OF_UNDYING)) return true;
@@ -39,5 +40,11 @@ public final class HumanLootPolicy {
             return stack.is(TacticalTags.PILLAR_BLOCKS) || stack.is(TacticalTags.BRIDGE_BLOCKS);
         }
         return false;
+    }
+
+    private static boolean isRawAnimalFood(ItemStack stack) {
+        return stack.is(Items.BEEF) || stack.is(Items.PORKCHOP) || stack.is(Items.CHICKEN)
+                || stack.is(Items.MUTTON) || stack.is(Items.RABBIT) || stack.is(Items.COD)
+                || stack.is(Items.SALMON);
     }
 }

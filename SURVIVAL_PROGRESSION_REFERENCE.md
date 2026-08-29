@@ -12,6 +12,15 @@ No cubre como parte de esta feature Nether, enchanting, potions, Stronghold, End
 
 ## Arquitectura resumida
 
+La ejecución de supervivencia utiliza un controlador por humano y una máquina
+de estados explícita. `SurvivalProgressionGoal` actúa como adaptador de Forge:
+el planner selecciona un intent inmutable y el controlador mantiene el ciclo
+`ASSESSING → PLANNING → ACQUIRE → NAVIGATE → ACT → COLLECT/WAIT → VERIFY`.
+Los fallos entran en `BACKOFF`, y el combate o peligro crítico entra en
+`SUSPENDED`; ningún estado se representa con `null`. Tras recargar el mundo se
+descarta la tarea activa y se vuelve a planificar desde el inventario y el
+mundo persistidos.
+
 ```mermaid
 flowchart TD
     H[Human goal selector] --> L[ItemLootGoal priority -1]
@@ -43,6 +52,12 @@ flowchart TD
 8. La caza mantiene su propia navegación y cooldown. Los ataques se desfasan por UUID para reducir colisiones con los frames de invulnerabilidad de la presa.
 9. Al completar o invalidar acciones, el siguiente cálculo puede adelantarse al tick siguiente.
 
+Las consultas de supervivencia comparten un presupuesto por dimensión y tick
+(`survivalPathBudgetPerTick` y `survivalScanBudgetPerTick`). Los claims se
+limpian como máximo una vez cada 20 ticks por dimensión, no durante cada
+candidato del scan. Loot físico pasa por `LootCollector`, que conserva utilidad,
+pickup delay, inserción parcial e invalidación de necesidades en un único punto.
+
 ## Inventario
 
 `HumanData.INVENTORY_SIZE` es `36`, equivalente a los 36 slots principales de un jugador (27 de almacenamiento + 9 de hotbar, sin contar armadura/offhand). La carga NBT conserva compatibilidad con listas anteriores más cortas; los slots nuevos permanecen vacíos. Inserción, stacking, loot y búsquedas recorren el tamaño dinámico.
@@ -56,7 +71,7 @@ flowchart TD
 
 ## Crafteo y recetas
 
-`SurvivalRecipeService` usa `RecipeManager`, simula consumo y remainders, valida capacidad y solo después muta inventario. Las tres recetas namespaced garantizan el mínimo de progresión incluso en el runtime observado que registra solo siete recetas: logs a planks, planks a sticks y planks a crafting table.
+`SurvivalRecipeService` usa `RecipeManager`, simula consumo y remainders, valida capacidad y solo después muta inventario. Las tres recetas namespaced garantizan el mínimo de progresión incluso en el runtime observado que registra solo siete recetas: logs a planks, planks a sticks y planks a crafting table. Tras fabricar un arco, el goal mantiene una reserva de 24 flechas cuando hay plumas, pedernal y palos disponibles; si faltan plumas, una gallina se convierte en una oportunidad de caza aunque la reserva de comida ya esté cubierta.
 
 ## Verificación y limitaciones conocidas
 
@@ -70,7 +85,7 @@ git diff --check
 
 - Compilación y procesamiento de recursos han pasado.
 - `git diff --check` ha pasado.
-- La suite GameTest completa está bloqueada por un `ConcurrentModificationException` preexistente en `GoalSelector`; por ello las pruebas nuevas compilan pero no todas cuentan con ejecución completa.
+- La suite GameTest completa ejecuta 119 pruebas requeridas en un servidor Forge dedicado. La validación debe repetirse después de cambios transversales; avisos de mods opcionales y errores de POI de fixtures no pertenecen al contrato de supervivencia.
 - El cliente carga y el mundo abre. En logs aparecen problemas ajenos a esta feature: `libflite.so` ausente, tags con referencias vanilla inexistentes y loot tables que requieren Farmer's Delight no instalado.
 - Los escenarios manuales se ejecutan con `/function hostile_humans:debug/<nombre>`.
 
@@ -116,7 +131,6 @@ Todos los archivos enumerados a continuación se reproducen **completos**, desde
 - [`src/main/java/com/craftix/hostile_humans/entity/ai/survival/SurvivalRecipeService.java`](#srcmainjavacomcraftixhostile-humansentityaisurvivalsurvivalrecipeservicejava)
 - [`src/main/java/com/craftix/hostile_humans/entity/ai/survival/FurnaceOperation.java`](#srcmainjavacomcraftixhostile-humansentityaisurvivalfurnaceoperationjava)
 - [`src/main/java/com/craftix/hostile_humans/entity/ai/survival/SquadMaterialSharing.java`](#srcmainjavacomcraftixhostile-humansentityaisurvivalsquadmaterialsharingjava)
-- [`src/main/java/com/craftix/hostile_humans/entity/ai/survival/ProgressionCraftingPolicy.java`](#srcmainjavacomcraftixhostile-humansentityaisurvivalprogressioncraftingpolicyjava)
 - [`src/main/java/com/craftix/hostile_humans/entity/ai/survival/GearUpgradePolicy.java`](#srcmainjavacomcraftixhostile-humansentityaisurvivalgearupgradepolicyjava)
 - [`src/main/java/com/craftix/hostile_humans/entity/ai/survival/SurvivalProgressionGoal.java`](#srcmainjavacomcraftixhostile-humansentityaisurvivalsurvivalprogressiongoaljava)
 
@@ -413,20 +427,6 @@ public final class SurvivalInventory {
         int total = 0;
         for (ItemStack stack : human.getData().getInventoryItems()) if (predicate.test(stack)) total += stack.getCount();
         return total;
-    }
-
-    public static int removeInventory(Human human, Predicate<ItemStack> predicate, int requested) {
-        if (requested <= 0 || human.getData() == null) return 0;
-        int removed = 0;
-        for (int slot = 0; slot < human.getData().getInventoryItemsSize() && removed < requested; slot++) {
-            ItemStack stack = human.getData().getInventoryItem(slot);
-            if (!predicate.test(stack)) continue;
-            int amount = Math.min(requested - removed, stack.getCount());
-            stack.shrink(amount);
-            if (stack.isEmpty()) human.getData().setInventoryItem(slot, ItemStack.EMPTY);
-            removed += amount;
-        }
-        return removed;
     }
 
     public static boolean canStore(Human human, ItemStack offered) {
@@ -734,7 +734,6 @@ import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeType;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -761,12 +760,6 @@ public final class SurvivalRecipeService {
             }
         }
         return Optional.empty();
-    }
-
-    public static boolean hasRecipe(Human human, Predicate<ItemStack> desired) {
-        return human.level().getRecipeManager().getAllRecipesFor(RecipeType.CRAFTING).stream()
-                .map(recipe -> recipe.getResultItem(human.level().registryAccess()))
-                .anyMatch(desired);
     }
 
     private static Optional<ItemStack> tryCraft(Human human, CraftingRecipe recipe, int size) {
@@ -987,24 +980,6 @@ public final class SquadMaterialSharing {
             receiver.queueEquipmentReevaluation();
         }
         return transferred;
-    }
-}
-```
-
-### `src/main/java/com/craftix/hostile_humans/entity/ai/survival/ProgressionCraftingPolicy.java`
-
-```java
-package com.craftix.hostile_humans.entity.ai.survival;
-
-import com.craftix.hostile_humans.entity.entities.Human;
-import net.minecraft.world.item.Items;
-
-public final class ProgressionCraftingPolicy {
-    private ProgressionCraftingPolicy() {}
-
-    public static boolean shouldCraftGoldenApple(Human human, SquadNeeds needs) {
-        return SurvivalInventory.count(human, Items.GOLDEN_APPLE) < 1
-                && !needs.needs(SquadNeed.FOOD) && !needs.needs(SquadNeed.IRON);
     }
 }
 ```
@@ -1297,8 +1272,7 @@ public final class SurvivalProgressionGoal extends Goal {
                 && SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof BowItem, true).isPresent()) return true;
         if (table && (needs.needs(SquadNeed.FEATHERS) || needs.needs(SquadNeed.FLINT))
                 && SurvivalRecipeService.craft(human, stack -> stack.is(Items.ARROW), true).isPresent()) return true;
-        return table && ProgressionCraftingPolicy.shouldCraftGoldenApple(human, needs)
-                && SurvivalRecipeService.craft(human, stack -> stack.is(Items.GOLDEN_APPLE), true).isPresent();
+        return false;
     }
 
     private boolean craftNeededGear(SquadNeeds needs, boolean table) {
@@ -4583,7 +4557,6 @@ package com.craftix.hostile_humans.gametest;
 
 import com.craftix.hostile_humans.entity.ai.survival.FurnaceOperation;
 import com.craftix.hostile_humans.entity.ai.survival.LocalResourceScanner;
-import com.craftix.hostile_humans.entity.ai.survival.ProgressionCraftingPolicy;
 import com.craftix.hostile_humans.entity.ai.survival.ProgressiveBlockBreaker;
 import com.craftix.hostile_humans.entity.ai.survival.SquadMaterialSharing;
 import com.craftix.hostile_humans.entity.ai.survival.SquadNeed;
@@ -4924,15 +4897,6 @@ public final class HumanSurvivalProgressionGameTest {
         human.setTarget(zombie);
         helper.assertTrue(!goal.canContinueToUse(), "Combat did not interrupt progression eligibility");
         cleanup(human); zombie.kill(); helper.succeed();
-    }
-
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
-    public static void goldenAppleNotOvercrafted(GameTestHelper helper) {
-        Human human = human(helper, new BlockPos(2, 1, 2));
-        human.getData().setInventoryItem(20, new ItemStack(Items.GOLDEN_APPLE));
-        SquadNeeds covered = new SquadNeeds(java.util.Map.of());
-        helper.assertTrue(!ProgressionCraftingPolicy.shouldCraftGoldenApple(human, covered), "Stock target allowed another golden apple");
-        cleanup(human); helper.succeed();
     }
 
     private static Human human(GameTestHelper helper, BlockPos relativePos) {

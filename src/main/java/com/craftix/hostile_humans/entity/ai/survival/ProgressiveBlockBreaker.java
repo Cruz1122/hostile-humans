@@ -65,29 +65,22 @@ public final class ProgressiveBlockBreaker {
         if (progress < 1.0F) return WorldActionResult.RUNNING;
         human.level().destroyBlockProgress(human.getId(), pos, -1);
         BlockEntity blockEntity = human.level().getBlockEntity(pos);
-        boolean exposedBeforeBreak = LocalResourceScanner.exposed(human, pos);
         ItemStack lootTool = tool.copy();
+        human.suppressSurvivalSounds(2);
         tool.getItem().mineBlock(tool, human.level(), expected, pos, human);
         if (!human.level().destroyBlock(pos, false, human, Block.UPDATE_LIMIT)) return abort();
         if (human.level() instanceof ServerLevel serverLevel && obtainsDrops) {
-            if (exposedBeforeBreak) {
-                Block.dropResources(expected, serverLevel, pos, blockEntity, human, lootTool);
-            } else {
-                // Direct hidden-ore mining has no open face. Loot spawned in
-                // the old block cell would be unreachable, so eject the same
-                // vanilla-calculated drops beside the miner for normal pickup.
-                List<ItemStack> drops = Block.getDrops(expected, serverLevel, pos, blockEntity, human, lootTool);
-                for (ItemStack drop : drops) {
-                    ItemEntity item = new ItemEntity(serverLevel, human.getX(), human.getY() + 0.2D, human.getZ(), drop);
-                    item.setPickUpDelay(0);
-                    serverLevel.addFreshEntity(item);
-                }
-                expected.spawnAfterBreak(serverLevel, pos, lootTool, true);
+            // Keep vanilla-calculated loot, but eject it beside the miner with
+            // no pickup delay. Spawning at the old block cell made both exposed
+            // and hidden drops vulnerable to failed paths and action switching.
+            List<ItemStack> drops = Block.getDrops(expected, serverLevel, pos, blockEntity, human, lootTool);
+            for (ItemStack drop : drops) {
+                ItemEntity item = new ItemEntity(serverLevel, human.getX(), human.getY() + 0.2D, human.getZ(), drop);
+                item.setPickUpDelay(0);
+                serverLevel.addFreshEntity(item);
             }
+            expected.spawnAfterBreak(serverLevel, pos, lootTool, true);
         }
-        // Ignore the events emitted synchronously by this human's own block
-        // break and loot. They must not preempt pickup or crafting.
-        human.setInvestigateSound(BlockPos.ZERO);
         return WorldActionResult.SUCCESS;
     }
 

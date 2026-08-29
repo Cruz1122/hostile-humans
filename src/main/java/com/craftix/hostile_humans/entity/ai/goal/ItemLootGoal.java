@@ -1,18 +1,20 @@
 package com.craftix.hostile_humans.entity.ai.goal;
 
 import com.craftix.hostile_humans.entity.ai.survival.SurvivalInventory;
+import com.craftix.hostile_humans.entity.ai.survival.LootCollector;
+import com.craftix.hostile_humans.entity.ai.survival.SurvivalQueryBudget;
+import com.craftix.hostile_humans.entity.ai.survival.SquadNeed;
 import com.craftix.hostile_humans.entity.ai.survival.SquadNeedsEvaluator;
 import com.craftix.hostile_humans.entity.entities.Human;
 import com.craftix.hostile_humans.entity.type.human.HumanLootPolicy;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.item.ItemEntity;
-import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 
 import java.util.Comparator;
 import java.util.EnumSet;
 
-/** Walks toward nearby useful item drops so the normal pickup ability can collect them. */
+/** Walks toward nearby useful item drops and transfers them into survival inventory at pickup range. */
 public final class ItemLootGoal extends Goal {
     private static final double SEARCH_RADIUS = 12.0D;
     private static final double PICKUP_DISTANCE_SQUARED = 2.25D;
@@ -32,7 +34,9 @@ public final class ItemLootGoal extends Goal {
     public ItemLootGoal(Human human, double speedModifier) {
         this.human = human;
         this.speedModifier = speedModifier;
-        setFlags(EnumSet.of(Flag.MOVE, Flag.LOOK));
+        // Navigation does not require forcing the head toward the item. Keeping
+        // LOOK free avoids the visibly broken "stare at loot" behavior.
+        setFlags(EnumSet.of(Flag.MOVE));
     }
 
     @Override
@@ -82,7 +86,15 @@ public final class ItemLootGoal extends Goal {
             human.getNavigation().stop();
             return;
         }
-        human.getLookControl().setLookAt(itemTarget, 30.0F, 30.0F);
+        if (itemTarget.hasPickUpDelay()) {
+            if (distanceSqr <= PICKUP_DISTANCE_SQUARED) {
+                human.getNavigation().stop();
+                stalledTicks = 0;
+            } else if (human.tickCount % 10 == 0 || human.getNavigation().isDone()) {
+                moveToTarget();
+            }
+            return;
+        }
         if (distanceSqr <= PICKUP_DISTANCE_SQUARED) {
             collectTarget();
         } else if (human.tickCount % 10 == 0 || human.getNavigation().isDone()) {
@@ -97,20 +109,22 @@ public final class ItemLootGoal extends Goal {
 
     private ItemEntity findNearestUsefulItem() {
         AABB searchArea = human.getBoundingBox().inflate(SEARCH_RADIUS, SEARCH_RADIUS / 2.0D, SEARCH_RADIUS);
+        boolean needsFood = SquadNeedsEvaluator.evaluate(human).needs(SquadNeed.FOOD);
         return human.level().getEntitiesOfClass(ItemEntity.class, searchArea,
                         this::canPickUp)
                 .stream()
                 .filter(this::hasPickupReachablePath)
-                .min(Comparator.comparingDouble(human::distanceToSqr))
+                .min(Comparator.comparingInt((ItemEntity item) -> needsFood && item.getItem().getFoodProperties(null) != null ? 0 : 1)
+                        .thenComparingDouble(human::distanceToSqr))
                 .orElse(null);
     }
 
     private boolean hasPickupReachablePath(ItemEntity item) {
         if (Math.abs(human.getY() - item.getY()) <= 1.0D && human.distanceToSqr(item) <= 2.25D) return true;
+        if (!SurvivalQueryBudget.tryPath(human)) return false;
         var path = human.getNavigation().createPath(item, 0);
         if (path == null || !path.canReach() || path.getEndNode() == null) return false;
         var end = path.getEndNode();
-        if (Math.abs(end.y - human.getY()) > 1.5D) return false;
         return Math.abs(item.getY() - end.y) <= 1.0D
                 && item.distanceToSqr(end.x + 0.5D, end.y, end.z + 0.5D) <= 2.25D;
     }
@@ -121,7 +135,7 @@ public final class ItemLootGoal extends Goal {
     }
 
     private boolean canPickUp(ItemEntity item) {
-        return item.isAlive() && !item.hasPickUpDelay() && !isTemporarilyIgnored(item)
+        return item.isAlive() && !isTemporarilyIgnored(item)
                 && HumanLootPolicy.isUseful(human, item.getItem())
                 && SurvivalInventory.canStore(human, item.getItem());
     }
@@ -138,20 +152,12 @@ public final class ItemLootGoal extends Goal {
 
     private void collectTarget() {
         if (itemTarget == null) return;
-        if (itemTarget.hasPickUpDelay()) return;
-        ItemStack stack = itemTarget.getItem();
-        int inserted = SurvivalInventory.insert(human, stack);
+        int inserted = LootCollector.collect(human, itemTarget);
         if (inserted <= 0) {
             ignoreCurrentTarget();
             itemTarget = null;
             return;
         }
-        if (stack.isEmpty()) itemTarget.discard();
-        else itemTarget.setItem(stack);
-        human.markEquipmentDirty();
-        human.queueUsefulInventoryEquipment();
-        human.queueEquipmentReevaluation();
-        SquadNeedsEvaluator.invalidate(human);
         itemTarget = null;
         nextSearchTick = human.tickCount;
         human.getNavigation().stop();

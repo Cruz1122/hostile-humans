@@ -40,6 +40,7 @@ public final class LocalResourceScanner {
     private static Optional<ResourceTarget> findFirst(Human human, List<SquadNeed> needs,
                                                        Predicate<BlockPos> ignored, boolean validatePath) {
         if (needs.isEmpty()) return Optional.empty();
+        if (!SurvivalQueryBudget.tryResourceScan(human)) return Optional.empty();
         // Ore is the intentional high-value target. If stone/deepslate is
         // packed around a visible ore, do not select the surrounding block
         // merely because STONE appears earlier in the enum.
@@ -48,8 +49,7 @@ public final class LocalResourceScanner {
                 .toList();
         int radius = Config.resourceScanRadius.get();
         BlockPos origin = human.blockPosition();
-        EnumMap<SquadNeed, BlockPos> nearest = new EnumMap<>(SquadNeed.class);
-        EnumMap<SquadNeed, Double> distances = new EnumMap<>(SquadNeed.class);
+        EnumMap<SquadNeed, List<BlockPos>> candidates = new EnumMap<>(SquadNeed.class);
         for (BlockPos mutable : BlockPos.betweenClosed(origin.offset(-radius, -Math.min(6, radius), -radius),
                 origin.offset(radius, Math.min(6, radius), radius))) {
             if (!human.level().hasChunkAt(mutable)) continue;
@@ -66,24 +66,25 @@ public final class LocalResourceScanner {
                     || (!exposed(human, mutable) && (!hiddenOre || !Config.allowHiddenOreMining.get()))
                     || SurvivalClaimManager.resourceClaimedByOther(human, mutable)
                     || !toolCanHarvest(human, state)) continue;
-            double distance = mutable.distSqr(origin);
-            if (distance < distances.getOrDefault(matchingNeed, Double.MAX_VALUE)) {
-                nearest.put(matchingNeed, mutable.immutable());
-                distances.put(matchingNeed, distance);
-            }
+            candidates.computeIfAbsent(matchingNeed, ignoredNeed -> new java.util.ArrayList<>())
+                    .add(mutable.immutable());
         }
         for (SquadNeed need : prioritizedNeeds) {
-            BlockPos pos = nearest.get(need);
-            if (pos == null) continue;
-            if (!validatePath) return Optional.of(new ResourceTarget(need, pos));
-            Optional<BlockPos> interaction = interactionPosition(human, pos);
-            // A nearby block can be mined without a walkable cell at the
-            // block's own height. This matters for vertical trees and ledges.
-            if (withinGatherRange(human, pos)
-                    && (Config.allowHiddenOreMining.get() && isOreNeed(need) || exposed(human, pos))
-                    || interaction.isPresent()
-                    && reachable(human, interaction.get())) {
-                return Optional.of(new ResourceTarget(need, pos));
+            List<BlockPos> options = candidates.get(need);
+            if (options == null) continue;
+            options.sort(Comparator.comparingDouble(pos -> pos.distSqr(origin)));
+            // Keep a small fallback set. The nearest block is not necessarily
+            // the reachable one (a common cause of apparently idle humans).
+            for (BlockPos pos : options.subList(0, Math.min(4, options.size()))) {
+                if (!validatePath) return Optional.of(new ResourceTarget(need, pos));
+                Optional<BlockPos> interaction = interactionPosition(human, pos);
+                // A nearby block can be mined without a walkable cell at the
+                // block's own height. This matters for vertical trees and ledges.
+                if (withinGatherRange(human, pos)
+                        && (Config.allowHiddenOreMining.get() && isOreNeed(need) || exposed(human, pos))
+                        || interaction.isPresent() && reachable(human, interaction.get())) {
+                    return Optional.of(new ResourceTarget(need, pos));
+                }
             }
         }
         return Optional.empty();
@@ -106,6 +107,7 @@ public final class LocalResourceScanner {
     }
 
     private static boolean reachable(Human human, BlockPos interaction) {
+        if (!SurvivalQueryBudget.tryPath(human)) return false;
         var path = human.getNavigation().createPath(interaction, 0);
         return path != null && path.canReach();
     }

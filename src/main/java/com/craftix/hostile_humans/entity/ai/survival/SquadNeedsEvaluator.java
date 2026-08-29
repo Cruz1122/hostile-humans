@@ -60,7 +60,6 @@ public final class SquadNeedsEvaluator {
 
         int rawOre = sum(members, stack -> stack.is(Items.RAW_IRON) || stack.is(Items.RAW_GOLD) ? stack.getCount() : 0);
         int fuel = sum(members, stack -> stack.is(Items.COAL) || stack.is(Items.CHARCOAL) ? stack.getCount() : 0);
-        if (rawFood + rawOre > 0) put(deficits, SquadNeed.FUEL, Math.max(0, 2 - fuel));
 
         int missingStoneTools = 0;
         for (Human member : members) {
@@ -95,6 +94,13 @@ public final class SquadNeedsEvaluator {
         }
         int iron = count(members, Items.IRON_INGOT) + count(members, Items.RAW_IRON);
         put(deficits, SquadNeed.IRON, Math.max(0, ironGearMissing - iron));
+        // Gather a small fuel reserve before mining iron as well as after raw
+        // materials exist. Otherwise a stone-equipped human can walk past coal,
+        // mine iron, and only then discover that the furnace cannot run.
+        boolean stonePickReady = members.stream().anyMatch(member -> hasStoneTool(member, PickaxeItem.class));
+        if (rawFood + rawOre > 0 || stonePickReady && ironGearMissing > iron) {
+            put(deficits, SquadNeed.FUEL, Math.max(0, 2 - fuel));
+        }
 
         boolean canMineDiamond = members.stream().anyMatch(member -> hasIronTool(member, PickaxeItem.class)
                 && hasShield(member));

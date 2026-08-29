@@ -3,7 +3,6 @@ package com.craftix.hostile_humans.gametest;
 import com.craftix.hostile_humans.HostileHumansCommands;
 import com.craftix.hostile_humans.entity.ai.survival.FurnaceOperation;
 import com.craftix.hostile_humans.entity.ai.survival.LocalResourceScanner;
-import com.craftix.hostile_humans.entity.ai.survival.ProgressionCraftingPolicy;
 import com.craftix.hostile_humans.entity.ai.survival.ProgressiveBlockBreaker;
 import com.craftix.hostile_humans.entity.ai.survival.SquadMaterialSharing;
 import com.craftix.hostile_humans.entity.ai.survival.SquadNeed;
@@ -27,6 +26,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.animal.Cow;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.item.BowItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameRules;
@@ -150,6 +150,67 @@ public final class HumanSurvivalProgressionGameTest {
         needs = SquadNeedsEvaluator.calculate(List.of(human));
         helper.assertTrue(!needs.needs(SquadNeed.IRON), "Iron stage still required gear after pickaxe and shield");
         cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    public static void ironStagePreemptivelyRequiresFuel(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        human.getData().setInventoryItem(20, new ItemStack(Items.STONE_AXE));
+        human.getData().setInventoryItem(21, new ItemStack(Items.STONE_SWORD));
+        SquadNeeds needs = SquadNeedsEvaluator.calculate(List.of(human));
+        helper.assertTrue(needs.needs(SquadNeed.IRON) && needs.needs(SquadNeed.FUEL),
+                "Stone-equipped iron stage did not reserve furnace fuel before raw ore existed");
+        cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 60)
+    public static void nearbyOreDoesNotInterruptActiveHunt(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_SWORD));
+        human.getData().setInventoryItem(20, new ItemStack(Items.STONE_PICKAXE));
+        human.getData().setInventoryItem(21, new ItemStack(Items.STONE_AXE));
+        human.getData().setInventoryItem(22, new ItemStack(Items.OAK_PLANKS, 16));
+        human.getData().setInventoryItem(23, new ItemStack(Items.STICK, 8));
+        helper.setBlock(new BlockPos(2, 1, 3), Blocks.CRAFTING_TABLE.defaultBlockState());
+        Cow cow = EntityType.COW.create(helper.getLevel());
+        if (cow == null) throw new IllegalStateException("Cow could not be created");
+        cow.moveTo(helper.absolutePos(new BlockPos(4, 1, 2)), 0.0F, 0.0F);
+        helper.getLevel().addFreshEntity(cow);
+        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
+        helper.assertTrue(goal.canUse(), "Fallback hunt did not start without a visible ore");
+        goal.start();
+        helper.setBlock(new BlockPos(3, 1, 2), Blocks.IRON_ORE.defaultBlockState());
+        SquadNeedsEvaluator.invalidate(human);
+        helper.assertTrue(goal.canContinueToUse(), "Active hunt was abandoned when a new ore appeared");
+        goal.stop();
+        cleanup(human); cow.kill(); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 60)
+    public static void huntRestoresSwordAfterRangedWeaponSelection(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.BOW));
+        human.getData().setInventoryItem(0, new ItemStack(Items.STONE_SWORD));
+        human.getData().setInventoryItem(1, new ItemStack(Items.STONE_PICKAXE));
+        human.getData().setInventoryItem(2, new ItemStack(Items.STONE_AXE));
+        human.getData().setInventoryItem(3, new ItemStack(Items.OAK_PLANKS, 16));
+        human.getData().setInventoryItem(4, new ItemStack(Items.STICK, 8));
+        helper.setBlock(new BlockPos(2, 1, 3), Blocks.CRAFTING_TABLE.defaultBlockState());
+        Cow cow = EntityType.COW.create(helper.getLevel());
+        if (cow == null) throw new IllegalStateException("Cow could not be created");
+        cow.moveTo(helper.absolutePos(new BlockPos(3, 1, 2)), 0.0F, 0.0F);
+        helper.getLevel().addFreshEntity(cow);
+        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
+        helper.assertTrue(goal.canUse(), "Hunt did not start with a sword available in inventory");
+        goal.start();
+        helper.assertTrue(human.equipWeapon(stack -> stack.getItem() instanceof net.minecraft.world.item.BowItem),
+                "Fixture could not simulate ranged weapon selection during the hunt");
+        goal.tick();
+        helper.assertTrue(human.getMainHandItem().getItem() instanceof net.minecraft.world.item.SwordItem,
+                "Hunt attacked with a bow instead of restoring the available sword");
+        goal.stop();
+        cleanup(human); cow.kill(); helper.succeed();
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
@@ -325,9 +386,125 @@ public final class HumanSurvivalProgressionGameTest {
                 new ItemStack(Items.RAW_IRON));
         drop.setPickUpDelay(10);
         helper.getLevel().addFreshEntity(drop);
-        helper.assertTrue(!new ItemLootGoal(human, 1.0D).canUse(),
-                "Loot goal targeted a delayed drop and would only stare at it");
+        ItemLootGoal goal = new ItemLootGoal(human, 1.0D);
+        helper.assertTrue(goal.canUse(), "Delayed survival drop was not reserved for eventual pickup");
+        helper.assertTrue(!goal.getFlags().contains(net.minecraft.world.entity.ai.goal.Goal.Flag.LOOK),
+                "Loot goal still owns LOOK and can stare at drops");
         drop.kill(); cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    public static void lootGoalPrioritizesNeededFoodOverNearestUsefulDrop(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.getData().setInventoryItem(20, new ItemStack(Items.COOKED_BEEF, 7));
+        ItemEntity leather = new ItemEntity(helper.getLevel(), human.getX() + 0.5D, human.getY(), human.getZ(),
+                new ItemStack(Items.LEATHER));
+        leather.setPickUpDelay(0);
+        helper.getLevel().addFreshEntity(leather);
+        ItemEntity beef = new ItemEntity(helper.getLevel(), human.getX() + 1.0D, human.getY(), human.getZ(),
+                new ItemStack(Items.BEEF));
+        beef.setPickUpDelay(0);
+        helper.getLevel().addFreshEntity(beef);
+        ItemLootGoal goal = new ItemLootGoal(human, 1.0D);
+        helper.assertTrue(goal.canUse(), "Needed food was not selected from useful nearby drops");
+        goal.start();
+        goal.tick();
+        helper.assertTrue(SurvivalInventory.count(human, Items.BEEF) == 1,
+                "Needed food was not prioritized over the nearest useful non-food drop");
+        helper.assertTrue(leather.isAlive(), "Nearest non-food drop was selected ahead of needed food");
+        goal.stop(); cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalPickupContinuity", timeoutTicks = 300)
+    public static void miningCollectsItsDropBeforeFallbackActions(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        helper.getLevel().getEntitiesOfClass(ItemEntity.class, human.getBoundingBox().inflate(30.0D))
+                .forEach(ItemEntity::discard);
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        human.getData().setInventoryItem(0, new ItemStack(Items.STONE_SWORD));
+        human.getData().setInventoryItem(1, new ItemStack(Items.STONE_AXE));
+        human.getData().setInventoryItem(2, new ItemStack(Items.OAK_PLANKS, 16));
+        human.getData().setInventoryItem(3, new ItemStack(Items.STICK, 8));
+        helper.setBlock(new BlockPos(2, 1, 3), Blocks.CRAFTING_TABLE.defaultBlockState());
+        BlockPos ore = helper.absolutePos(new BlockPos(4, 1, 2));
+        helper.setBlock(new BlockPos(4, 1, 2), Blocks.IRON_ORE.defaultBlockState());
+        helper.assertTrue(LocalResourceScanner.findReachableFirst(human,
+                        List.of(SquadNeed.FUEL, SquadNeed.IRON), pos -> false)
+                        .map(LocalResourceScanner.ResourceTarget::pos).filter(ore::equals).isPresent(),
+                "Continuity fixture did not expose actionable iron ore");
+        human.targetSelector.removeAllGoals(goal -> true);
+        // Keep the normal sound investigation goal. Removing it leaves any
+        // ambient vibration latched forever, which makes survival ineligible
+        // and turns this integration test into a batch-order-dependent fixture.
+        human.goalSelector.removeAllGoals(goal -> true);
+        human.goalSelector.addGoal(-30, new ItemLootGoal(human, 1.0D));
+        human.goalSelector.addGoal(-20, new SurvivalProgressionGoal(human));
+        human.setHasDecidedToSleepTonight(true);
+        human.setSleepingThisNight(false);
+        human.setNoAi(false);
+
+        helper.startSequence().thenExecuteFor(240, () -> human.setOnGround(true)).thenExecute(() -> {
+            helper.assertTrue(!helper.getLevel().getBlockState(ore).is(Blocks.IRON_ORE),
+                    "Normal AI ticks did not finish mining the selected iron ore: position=" + human.blockPosition()
+                            + ", hand=" + human.getMainHandItem() + ", needs="
+                            + SquadNeedsEvaluator.calculate(List.of(human)).deficits() + ", investigating="
+                            + human.investigateSound() + ", running="
+                            + human.goalSelector.getRunningGoals()
+                            .map(goal -> goal.getPriority() + ":" + goal.getGoal().getClass().getSimpleName()).toList());
+            helper.assertTrue(SurvivalInventory.count(human, Items.RAW_IRON) > 0,
+                    "Human broke iron ore but did not collect its drop before another action");
+            helper.assertTrue(helper.getLevel().getEntitiesOfClass(ItemEntity.class,
+                            human.getBoundingBox().inflate(12.0D), item -> item.getItem().is(Items.RAW_IRON)).isEmpty(),
+                    "Mined raw iron remained abandoned in the arena");
+            cleanup(human); helper.succeed();
+        });
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalWoodBootstrapIntegration", timeoutTicks = 500)
+    public static void emptyHumanHarvestsTreeAndCraftsPickaxeThroughNormalAiTicks(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        // GameTest templates share a server world. Remove leftover human
+        // fixtures in the neighboring arenas before their death drops can
+        // become unrelated loot for this bootstrap scenario.
+        helper.getLevel().getEntitiesOfClass(Human.class, human.getBoundingBox().inflate(30.0D))
+                .stream().filter(other -> other != human).forEach(Human::discard);
+        helper.getLevel().getEntitiesOfClass(ItemEntity.class, human.getBoundingBox().inflate(30.0D))
+                .forEach(ItemEntity::discard);
+        helper.setBlock(new BlockPos(2, 1, 3), Blocks.CRAFTING_TABLE.defaultBlockState());
+        List<BlockPos> tree = List.of(
+                helper.absolutePos(new BlockPos(4, 1, 2)),
+                helper.absolutePos(new BlockPos(4, 2, 2)),
+                helper.absolutePos(new BlockPos(4, 3, 2)));
+        tree.forEach(pos -> helper.getLevel().setBlock(pos, Blocks.OAK_LOG.defaultBlockState(), 3));
+        helper.assertTrue(LocalResourceScanner.find(human, SquadNeed.WOOD)
+                        .filter(tree::contains).isPresent(),
+                "Wood integration fixture did not expose its tree to the survival scanner");
+        human.targetSelector.removeAllGoals(goal -> true);
+        human.goalSelector.removeAllGoals(goal -> !(goal instanceof InvestigateSoundGoal));
+        human.goalSelector.addGoal(-1, new ItemLootGoal(human, 1.0D));
+        SurvivalProgressionGoal progressionGoal = new SurvivalProgressionGoal(human);
+        human.goalSelector.addGoal(5, progressionGoal);
+        human.setNoAi(false);
+
+        helper.startSequence()
+                .thenExecuteFor(20, () -> human.setOnGround(true))
+                .thenExecuteFor(380, () -> human.setOnGround(true))
+                .thenExecute(() -> {
+            long remainingLogs = tree.stream()
+                    .filter(pos -> helper.getLevel().getBlockState(pos).is(Blocks.OAK_LOG))
+                    .count();
+                    helper.assertTrue(remainingLogs <= 1,
+                            "Normal survival AI abandoned the tree after one block: remaining=" + remainingLogs
+                            + ", position=" + human.blockPosition() + ", hand=" + human.getMainHandItem()
+                            + ", needs=" + SquadNeedsEvaluator.calculate(List.of(human)).deficits()
+                            + ", investigating=" + human.investigateSound() + ", running="
+                            + human.goalSelector.getRunningGoals()
+                            .map(goal -> goal.getPriority() + ":" + goal.getGoal().getClass().getSimpleName()).toList());
+            helper.assertTrue(SurvivalInventory.contains(human, stack -> stack.is(Items.WOODEN_PICKAXE)),
+                    "Normal survival AI harvested wood but did not complete the wooden-pickaxe bootstrap: hand="
+                            + human.getMainHandItem() + ", inventory=" + human.getData().getInventoryItems());
+                    cleanup(human); helper.succeed();
+                });
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
@@ -457,6 +634,61 @@ public final class HumanSurvivalProgressionGameTest {
         helper.assertTrue(SurvivalInventory.contains(human, stack -> stack.is(Items.WOODEN_PICKAXE)),
                 "Progression stopped after gathering wood instead of crafting a wooden pickaxe");
         cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    public static void progressionContinuesAfterCraftingBow(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.getData().setInventoryItem(20, new ItemStack(Items.OAK_PLANKS, 12));
+        human.getData().setInventoryItem(21, new ItemStack(Items.STICK, 9));
+        human.getData().setInventoryItem(22, new ItemStack(Items.STRING, 3));
+        human.getData().setInventoryItem(23, new ItemStack(Items.FEATHER, 6));
+        human.getData().setInventoryItem(24, new ItemStack(Items.FLINT, 6));
+        helper.setBlock(new BlockPos(3, 1, 2), Blocks.CRAFTING_TABLE.defaultBlockState());
+        BlockPos log = helper.absolutePos(new BlockPos(4, 1, 2));
+        helper.setBlock(new BlockPos(4, 1, 2), Blocks.OAK_LOG.defaultBlockState());
+
+        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
+        goal.canUse();
+        helper.assertTrue(SurvivalInventory.contains(human, stack -> stack.getItem() instanceof BowItem),
+                "Ranged bootstrap did not craft a bow from available string and sticks");
+        helper.assertTrue(SurvivalInventory.count(human, Items.ARROW) > 0,
+                "Ranged bootstrap stopped after crafting a bow instead of crafting arrows");
+        boolean selectedResource = false;
+        for (int attempt = 0; attempt < 4 && !selectedResource; attempt++) {
+            human.tickCount += 10;
+            selectedResource = goal.canUse();
+        }
+        helper.assertTrue(selectedResource,
+                "Progression did not resume resource gathering after ranged crafting: state="
+                        + goal.snapshot() + ", needs=" + SquadNeedsEvaluator.calculate(List.of(human)).deficits());
+        goal.start();
+        for (int tick = 0; tick < 120 && helper.getLevel().getBlockState(log).is(Blocks.OAK_LOG); tick++) goal.tick();
+        helper.assertTrue(!helper.getLevel().getBlockState(log).is(Blocks.OAK_LOG),
+                "Progression stopped after crafting a bow instead of gathering the next resource");
+        goal.stop();
+        cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 60)
+    public static void progressionHuntsChickenForMissingArrows(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.BOW));
+        human.getData().setInventoryItem(20, new ItemStack(Items.IRON_PICKAXE));
+        human.getData().setInventoryItem(21, new ItemStack(Items.IRON_AXE));
+        human.getData().setInventoryItem(22, new ItemStack(Items.IRON_SWORD));
+        human.getData().setInventoryItem(23, new ItemStack(Items.COOKED_BEEF, 8));
+        var chicken = EntityType.CHICKEN.create(helper.getLevel());
+        if (chicken == null) throw new IllegalStateException("Chicken could not be created");
+        chicken.moveTo(helper.absolutePos(new BlockPos(3, 1, 2)), 0.0F, 0.0F);
+        chicken.setNoAi(true);
+        helper.getLevel().addFreshEntity(chicken);
+
+        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
+        helper.assertTrue(goal.canUse(),
+                "Missing arrow feathers did not select a chicken hunt when food was already stocked");
+        goal.stop();
+        cleanup(human); chicken.discard(); helper.succeed();
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
@@ -611,8 +843,83 @@ public final class HumanSurvivalProgressionGameTest {
                             "Hunting stopped after first hit: firstHealth=" + firstHitHealth[0]
                                     + ", currentHealth=" + cow.getHealth() + ", firstTick=" + firstHitTick[0]
                                     + ", currentTick=" + human.tickCount + ", investigating=" + human.investigateSound());
-                    human.goalSelector.removeGoal(huntGoal);
-                    cleanup(human); cow.kill(); helper.succeed();
+                     human.goalSelector.removeGoal(huntGoal);
+                     cleanup(human); cow.kill(); helper.succeed();
+                 });
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalAnimalProgression", timeoutTicks = 360)
+    public static void huntingCollectsVanillaMeatAndResumesProgression(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
+        human.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        human.getData().setInventoryItem(20, new ItemStack(Items.STONE_PICKAXE));
+        human.getData().setInventoryItem(21, new ItemStack(Items.STONE_AXE));
+        human.getData().setInventoryItem(22, new ItemStack(Items.COOKED_BEEF, 7));
+        helper.getLevel().getEntities(EntityType.ITEM, human.getBoundingBox().inflate(16.0D), entity -> true)
+                .forEach(ItemEntity::discard);
+
+        boolean previousDoMobLoot = helper.getLevel().getGameRules().getBoolean(GameRules.RULE_DOMOBLOOT);
+        helper.getLevel().getGameRules().getRule(GameRules.RULE_DOMOBLOOT).set(true, helper.getLevel().getServer());
+        Cow cow;
+        BlockPos nextResource = helper.absolutePos(new BlockPos(4, 1, 2));
+        try {
+            cow = EntityType.COW.create(helper.getLevel());
+            if (cow == null) throw new IllegalStateException("Cow could not be created");
+            cow.moveTo(helper.absolutePos(new BlockPos(3, 1, 2)), 0.0F, 0.0F);
+            cow.setNoAi(true);
+            helper.getLevel().addFreshEntity(cow);
+            helper.assertTrue(cow.hurt(human.damageSources().mobAttack(human), cow.getHealth()),
+                    "Vanilla animal could not be killed for the loot regression");
+            helper.assertTrue(!cow.isAlive(), "Vanilla animal death did not complete immediately");
+        } catch (RuntimeException | Error failure) {
+            helper.getLevel().getGameRules().getRule(GameRules.RULE_DOMOBLOOT)
+                    .set(previousDoMobLoot, helper.getLevel().getServer());
+            throw failure;
+        }
+
+        // Keep this test focused on the vanilla drop -> survival inventory
+        // handoff. Pickup delay and navigation reach are covered independently;
+        // pinning the real vanilla beef drop beside the human avoids a flaky
+        // dependency on entity spawn physics between GameTest batches.
+        ItemEntity beefDrop = helper.getLevel().getEntitiesOfClass(ItemEntity.class,
+                        human.getBoundingBox().inflate(16.0D), item -> item.getItem().is(Items.BEEF))
+                .stream().findFirst().orElseThrow(() -> new AssertionError("Cow produced no vanilla beef drop"));
+        beefDrop.setPickUpDelay(0);
+        beefDrop.setPos(human.getX() + 0.5D, human.getY(), human.getZ());
+
+        ItemLootGoal lootGoal = new ItemLootGoal(human, 1.0D);
+        helper.assertTrue(lootGoal.canUse(), "Vanilla animal meat was not offered as useful loot");
+        lootGoal.start();
+        SurvivalProgressionGoal progressionGoal = new SurvivalProgressionGoal(human);
+        helper.startSequence()
+                .thenExecuteFor(40, lootGoal::tick)
+                .thenExecute(() -> {
+                    helper.assertTrue(SurvivalInventory.count(human, Items.BEEF) > 0,
+                            "Vanilla animal meat was not collected into survival inventory: items="
+                                    + helper.getLevel().getEntitiesOfClass(ItemEntity.class, human.getBoundingBox().inflate(16.0D))
+                                    .stream().map(item -> item.getItem().toString() + "@" + item.position()
+                                            + "/delayed=" + item.hasPickUpDelay()).toList()
+                                    + ", inventory=" + human.getData().getInventoryItems());
+                    lootGoal.stop();
+                    human.setInvestigateSound(BlockPos.ZERO);
+                    helper.setBlock(new BlockPos(4, 1, 2), Blocks.OAK_LOG.defaultBlockState());
+                    human.tickCount += 10;
+                    helper.assertTrue(progressionGoal.canUse(),
+                            "Progression did not select a new resource after collecting animal meat");
+                    progressionGoal.start();
+                })
+                .thenExecuteFor(100, progressionGoal::tick)
+                .thenExecute(() -> {
+                    try {
+                        helper.assertTrue(!helper.getLevel().getBlockState(nextResource).is(Blocks.OAK_LOG),
+                                "Progression did not resume with a new resource after collecting animal meat");
+                        progressionGoal.stop();
+                        cleanup(human); cow.kill(); helper.succeed();
+                    } finally {
+                        helper.getLevel().getGameRules().getRule(GameRules.RULE_DOMOBLOOT)
+                                .set(previousDoMobLoot, helper.getLevel().getServer());
+                    }
                 });
     }
 
@@ -696,15 +1003,6 @@ public final class HumanSurvivalProgressionGameTest {
         cleanup(human); zombie.kill(); helper.succeed();
     }
 
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
-    public static void goldenAppleNotOvercrafted(GameTestHelper helper) {
-        Human human = human(helper, new BlockPos(2, 1, 2));
-        human.getData().setInventoryItem(20, new ItemStack(Items.GOLDEN_APPLE));
-        SquadNeeds covered = new SquadNeeds(java.util.Map.of());
-        helper.assertTrue(!ProgressionCraftingPolicy.shouldCraftGoldenApple(human, covered), "Stock target allowed another golden apple");
-        cleanup(human); helper.succeed();
-    }
-
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalCommandIsolation", timeoutTicks = 40)
     public static void inventoryCommandSelectsNearestHuman(GameTestHelper helper) {
         Human near = human(helper, new BlockPos(2, 1, 2));
@@ -730,6 +1028,8 @@ public final class HumanSurvivalProgressionGameTest {
         human.setNoAi(true);
         human.setOnGround(true);
         human.setNoGravity(true);
+        human.setHasDecidedToSleepTonight(true);
+        human.setSleepingThisNight(false);
         if (!helper.getLevel().addFreshEntity(human)) throw new IllegalStateException("Human could not be added");
         human.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
         human.setItemSlot(EquipmentSlot.OFFHAND, ItemStack.EMPTY);
@@ -762,6 +1062,8 @@ public final class HumanSurvivalProgressionGameTest {
     }
 
     private static void cleanup(Human... humans) {
-        for (Human human : humans) human.kill();
+        // Killing equipped fixtures creates untagged item drops that nearby
+        // integration batches can pursue. Discard preserves batch isolation.
+        for (Human human : humans) human.discard();
     }
 }

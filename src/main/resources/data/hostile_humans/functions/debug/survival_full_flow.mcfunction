@@ -10,6 +10,9 @@
 schedule clear hostile_humans:debug/survival_interruptions_start
 kill @e[tag=hh_survival_full_flow]
 kill @e[tag=hh_survival_progression_lab]
+# Killing the previous worker drops its equipped gear without preserving the
+# worker tag. Clear those stale drops before spawning the new empty worker.
+kill @e[type=minecraft:item,distance=..16]
 gamerule doMobSpawning false
 gamerule mobGriefing true
 gamerule doDaylightCycle false

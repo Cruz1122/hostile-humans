@@ -65,6 +65,8 @@ public class Config {
     public static ForgeConfigSpec.BooleanValue allowHiddenOreMining;
     public static ForgeConfigSpec.IntValue needsEvaluationIntervalTicks;
     public static ForgeConfigSpec.IntValue explorationRadius;
+    public static ForgeConfigSpec.IntValue survivalPathBudgetPerTick;
+    public static ForgeConfigSpec.IntValue survivalScanBudgetPerTick;
 
     static {
         BUILDER.push("Hostile Humans Settings");
@@ -148,6 +150,10 @@ public class Config {
                 .defineInRange("needsEvaluationIntervalTicks", 60, 40, 200);
         explorationRadius = SERVER_BUILDER.comment("Maximum radius for local progression exploration")
                 .defineInRange("explorationRadius", 48, 12, 96);
+        survivalPathBudgetPerTick = SERVER_BUILDER.comment("Maximum survival path requests per dimension and tick")
+                .defineInRange("survivalPathBudgetPerTick", 100, 10, 1000);
+        survivalScanBudgetPerTick = SERVER_BUILDER.comment("Maximum full survival resource scans per dimension and tick")
+                .defineInRange("survivalScanBudgetPerTick", 50, 5, 500);
         SERVER_BUILDER.pop();
 
         BUILDER.pop();

@@ -18,6 +18,7 @@ public class InvestigateSoundGoal extends Goal {
 	protected BlockPos pos = BlockPos.ZERO;
 	private int calmDown;
 	private int searchTicksRemaining;
+	private int investigationTicksRemaining;
 	private boolean isRunning;
 
 	public InvestigateSoundGoal(Mob pMob, double pSpeedModifier) {
@@ -50,7 +51,8 @@ public class InvestigateSoundGoal extends Goal {
 	 */
 	public boolean canContinueToUse() {
 		if (this.mob.isSleeping() || this.mob.getTarget() != null) return false;
-		return !this.hasInvestigated || this.searchTicksRemaining > 0;
+		return this.investigationTicksRemaining > 0
+				&& (!this.hasInvestigated || this.searchTicksRemaining > 0);
 	}
 
 	/**
@@ -62,6 +64,7 @@ public class InvestigateSoundGoal extends Goal {
 		}
 		this.hasInvestigated = false;
 		this.searchTicksRemaining = reducedTickDelay(60);
+		this.investigationTicksRemaining = reducedTickDelay(100);
 	}
 
 	/**
@@ -83,6 +86,11 @@ public class InvestigateSoundGoal extends Goal {
 	 * Keep ticking a continuous task that has already been started
 	 */
 	public void tick() {
+		if (--this.investigationTicksRemaining <= 0) {
+			if (this.mob instanceof Human investigator) investigator.setInvestigateSound(BlockPos.ZERO);
+			this.mob.getNavigation().stop();
+			return;
+		}
 		if (this.mob instanceof Human investigator) {
 			BlockPos latestSound = investigator.investigateSound();
 			if (!BlockPos.ZERO.equals(latestSound) && !latestSound.equals(this.pos)) {

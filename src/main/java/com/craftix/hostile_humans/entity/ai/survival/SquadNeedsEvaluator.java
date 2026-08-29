@@ -2,7 +2,6 @@ package com.craftix.hostile_humans.entity.ai.survival;
 
 import com.craftix.hostile_humans.Config;
 import com.craftix.hostile_humans.HumanUtil;
-import com.craftix.hostile_humans.entity.ai.squad.SquadManager;
 import com.craftix.hostile_humans.entity.entities.Human;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.tags.ItemTags;
@@ -15,7 +14,6 @@ import net.minecraft.world.item.PickaxeItem;
 import net.minecraft.world.item.SwordItem;
 import net.minecraft.world.level.Level;
 
-import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
@@ -32,22 +30,19 @@ public final class SquadNeedsEvaluator {
     private SquadNeedsEvaluator() {}
 
     public static SquadNeeds evaluate(Human source) {
-        UUID squad = source.getSquadId() == null ? source.getUUID() : source.getSquadId();
-        Key key = new Key(source.level().dimension(), squad);
+        Key key = new Key(source.level().dimension(), source.getUUID());
         long now = source.level().getGameTime();
         Cached cached = CACHE.get(key);
         if (cached != null && now < cached.expiresAt) return cached.needs;
-        List<Human> members = new ArrayList<>();
-        members.add(source);
-        members.addAll(SquadManager.nearbyMembers(source));
-        SquadNeeds needs = calculate(members);
+        // Progression is owned by each human. Squad sharing remains an optimization,
+        // but another member's equipment must never satisfy this human's gate.
+        SquadNeeds needs = calculate(List.of(source));
         CACHE.put(key, new Cached(needs, now + Config.needsEvaluationIntervalTicks.get()));
         return needs;
     }
 
     public static void invalidate(Human source) {
-        UUID squad = source.getSquadId() == null ? source.getUUID() : source.getSquadId();
-        CACHE.remove(new Key(source.level().dimension(), squad));
+        CACHE.remove(new Key(source.level().dimension(), source.getUUID()));
     }
 
     public static SquadNeeds calculate(List<Human> members) {
@@ -58,7 +53,9 @@ public final class SquadNeedsEvaluator {
 
         int wood = sum(members, stack -> stack.is(ItemTags.LOGS) ? stack.getCount() * 4
                 : stack.is(ItemTags.PLANKS) || stack.is(Items.STICK) ? stack.getCount() : 0);
-        boolean missingBasicTool = members.stream().anyMatch(member -> !hasTool(member, PickaxeItem.class) || !hasTool(member, AxeItem.class));
+        // Wood is a bootstrap dependency for the first pickaxe only. Once a
+        // pickaxe exists, stone becomes the next actionable mining target.
+        boolean missingBasicTool = members.stream().anyMatch(member -> !hasTool(member, PickaxeItem.class));
         put(deficits, SquadNeed.WOOD, Math.max(missingBasicTool ? 4 : 0, members.size() * WOOD_UNITS_PER_MEMBER - wood));
 
         int rawOre = sum(members, stack -> stack.is(Items.RAW_IRON) || stack.is(Items.RAW_GOLD) ? stack.getCount() : 0);
@@ -69,6 +66,7 @@ public final class SquadNeedsEvaluator {
         for (Human member : members) {
             if (!hasStoneTool(member, PickaxeItem.class)) missingStoneTools++;
             if (!hasStoneTool(member, AxeItem.class)) missingStoneTools++;
+            if (!hasStoneTool(member, SwordItem.class)) missingStoneTools++;
         }
         if (missingStoneTools > 0) put(deficits, SquadNeed.STONE,
                 Math.max(0, missingStoneTools * STONE_PER_BASIC_TOOL
@@ -77,23 +75,38 @@ public final class SquadNeedsEvaluator {
         int ironGearMissing = 0;
         int diamondGearMissing = 0;
         for (Human member : members) {
-            if (!hasTool(member, PickaxeItem.class) || !hasTool(member, SwordItem.class) || !hasTool(member, AxeItem.class)) ironGearMissing += 3;
+            if (!hasIronTool(member, PickaxeItem.class)) ironGearMissing += 3;
+            if (!hasShield(member)) ironGearMissing += 1;
             for (var slot : new net.minecraft.world.entity.EquipmentSlot[]{net.minecraft.world.entity.EquipmentSlot.HEAD,
                     net.minecraft.world.entity.EquipmentSlot.CHEST, net.minecraft.world.entity.EquipmentSlot.LEGS,
                     net.minecraft.world.entity.EquipmentSlot.FEET}) {
                 ItemStack armor = member.getItemBySlot(slot);
-                if (!(armor.getItem() instanceof ArmorItem)) ironGearMissing += 4;
                 if (!(armor.getItem() instanceof ArmorItem armorItem)
                         || armorItem.getMaterial() != net.minecraft.world.item.ArmorMaterials.DIAMOND
-                        && armorItem.getMaterial() != net.minecraft.world.item.ArmorMaterials.NETHERITE) diamondGearMissing++;
+                        && armorItem.getMaterial() != net.minecraft.world.item.ArmorMaterials.NETHERITE) {
+                    diamondGearMissing += switch (slot.getName()) {
+                        case "head" -> 5;
+                        case "chest" -> 8;
+                        case "legs" -> 7;
+                        default -> 4;
+                    };
+                }
             }
         }
         int iron = count(members, Items.IRON_INGOT) + count(members, Items.RAW_IRON);
         put(deficits, SquadNeed.IRON, Math.max(0, ironGearMissing - iron));
 
-        boolean canMineDiamond = members.stream().anyMatch(member -> SurvivalInventory.contains(member,
-                stack -> stack.is(Items.IRON_PICKAXE) || stack.is(Items.DIAMOND_PICKAXE) || stack.is(Items.NETHERITE_PICKAXE)));
-        if (canMineDiamond) put(deficits, SquadNeed.DIAMOND, Math.max(0, Math.min(3, diamondGearMissing) - count(members, Items.DIAMOND)));
+        boolean canMineDiamond = members.stream().anyMatch(member -> hasIronTool(member, PickaxeItem.class)
+                && hasShield(member));
+        if (canMineDiamond) {
+            int diamondToolsMissing = 0;
+            for (Human member : members) {
+                if (!hasDiamondTool(member, PickaxeItem.class)) diamondToolsMissing += 3;
+                if (!hasDiamondTool(member, AxeItem.class)) diamondToolsMissing += 3;
+                if (!hasDiamondTool(member, SwordItem.class)) diamondToolsMissing += 3;
+            }
+            put(deficits, SquadNeed.DIAMOND, Math.max(0, diamondToolsMissing + diamondGearMissing - count(members, Items.DIAMOND)));
+        }
 
         int apples = count(members, Items.APPLE);
         int gapples = count(members, Items.GOLDEN_APPLE);
@@ -122,6 +135,22 @@ public final class SquadNeedsEvaluator {
         return SurvivalInventory.contains(member, stack -> type.isInstance(stack.getItem())
                 && stack.getItem() instanceof net.minecraft.world.item.TieredItem tiered
                 && tiered.getTier().getLevel() >= 1);
+    }
+
+    private static boolean hasIronTool(Human member, Class<?> type) {
+        return SurvivalInventory.contains(member, stack -> type.isInstance(stack.getItem())
+                && stack.getItem() instanceof net.minecraft.world.item.TieredItem tiered
+                && tiered.getTier().getLevel() >= 2);
+    }
+
+    private static boolean hasDiamondTool(Human member, Class<?> type) {
+        return SurvivalInventory.contains(member, stack -> type.isInstance(stack.getItem())
+                && stack.getItem() instanceof net.minecraft.world.item.TieredItem tiered
+                && tiered.getTier().getLevel() >= 3);
+    }
+
+    private static boolean hasShield(Human member) {
+        return SurvivalInventory.contains(member, stack -> stack.is(Items.SHIELD));
     }
 
     private static boolean isRawFood(ItemStack stack) {

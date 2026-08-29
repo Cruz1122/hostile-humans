@@ -13,7 +13,9 @@ import com.craftix.hostile_humans.entity.ai.survival.SurvivalClaimManager;
 import com.craftix.hostile_humans.entity.ai.survival.SurvivalInventory;
 import com.craftix.hostile_humans.entity.ai.survival.SurvivalProgressionGoal;
 import com.craftix.hostile_humans.entity.ai.survival.SurvivalRecipeService;
+import com.craftix.hostile_humans.entity.ai.action.MiningToolSelector;
 import com.craftix.hostile_humans.entity.ai.goal.ItemLootGoal;
+import com.craftix.hostile_humans.entity.ai.goal.InvestigateSoundGoal;
 import com.craftix.hostile_humans.entity.entities.Human;
 import com.craftix.hostile_humans.entity.entities.ModEntityType;
 import net.minecraft.core.BlockPos;
@@ -53,11 +55,11 @@ public final class HumanSurvivalProgressionGameTest {
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
-    public static void missingPickaxeAndAxeRequiresEnoughStone(GameTestHelper helper) {
+    public static void missingStoneUsefulToolsRequiresEnoughStone(GameTestHelper helper) {
         Human human = human(helper, new BlockPos(2, 1, 2));
         SquadNeeds needs = SquadNeedsEvaluator.calculate(List.of(human));
-        helper.assertTrue(needs.deficit(SquadNeed.STONE) == 6,
-                "Missing stone pickaxe and axe did not require six stone: " + needs.deficit(SquadNeed.STONE));
+        helper.assertTrue(needs.deficit(SquadNeed.STONE) == 9,
+                "Missing stone pickaxe, axe and sword did not require nine stone: " + needs.deficit(SquadNeed.STONE));
         cleanup(human); helper.succeed();
     }
 
@@ -67,6 +69,7 @@ public final class HumanSurvivalProgressionGameTest {
         human.getData().setInventoryItem(20, new ItemStack(Items.OAK_LOG, 16));
         human.getData().setInventoryItem(21, new ItemStack(Items.IRON_PICKAXE));
         human.getData().setInventoryItem(22, new ItemStack(Items.IRON_AXE));
+        human.getData().setInventoryItem(23, new ItemStack(Items.IRON_SWORD));
         helper.setBlock(new BlockPos(4, 1, 2), Blocks.OAK_LOG.defaultBlockState());
         SquadNeeds needs = SquadNeedsEvaluator.calculate(List.of(human));
         helper.assertTrue(!needs.needs(SquadNeed.WOOD), "Stocked human still needed WOOD");
@@ -111,15 +114,41 @@ public final class HumanSurvivalProgressionGameTest {
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalResourceIsolation", timeoutTicks = 40)
-    public static void hiddenOreIsNotDetected(GameTestHelper helper) {
+    public static void hiddenOreIsDetectedDirectly(GameTestHelper helper) {
         Human human = human(helper, new BlockPos(2, 1, 2));
         human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
         BlockPos relative = new BlockPos(4, 2, 2);
         BlockPos ore = helper.absolutePos(relative);
         helper.setBlock(relative, Blocks.IRON_ORE.defaultBlockState());
         for (var direction : net.minecraft.core.Direction.values()) helper.setBlock(relative.relative(direction), Blocks.STONE.defaultBlockState());
-        helper.assertTrue(LocalResourceScanner.find(human, SquadNeed.IRON).filter(ore::equals).isEmpty(),
-                "Completely hidden iron was detected");
+        helper.assertTrue(LocalResourceScanner.find(human, SquadNeed.IRON).filter(ore::equals).isPresent(),
+                "Loaded hidden iron was not detected directly");
+        helper.assertTrue(helper.getLevel().getBlockState(ore.relative(net.minecraft.core.Direction.NORTH)).is(Blocks.STONE),
+                "Detecting hidden ore modified a blocking block");
+        cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    public static void deepslateOreIsDetectedDirectly(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        BlockPos ore = helper.absolutePos(new BlockPos(4, 2, 2));
+        helper.setBlock(new BlockPos(4, 2, 2), Blocks.DEEPSLATE_DIAMOND_ORE.defaultBlockState());
+        for (var direction : net.minecraft.core.Direction.values()) helper.setBlock(new BlockPos(4, 2, 2).relative(direction), Blocks.DEEPSLATE.defaultBlockState());
+        helper.assertTrue(LocalResourceScanner.find(human, SquadNeed.DIAMOND).filter(ore::equals).isPresent(),
+                "Hidden deepslate diamond was not detected");
+        cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    public static void ironStageRequiresPickaxeAndShield(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        SquadNeeds needs = SquadNeedsEvaluator.calculate(List.of(human));
+        helper.assertTrue(needs.needs(SquadNeed.IRON), "Iron stage did not require a shield");
+        human.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        needs = SquadNeedsEvaluator.calculate(List.of(human));
+        helper.assertTrue(!needs.needs(SquadNeed.IRON), "Iron stage still required gear after pickaxe and shield");
         cleanup(human); helper.succeed();
     }
 
@@ -149,12 +178,50 @@ public final class HumanSurvivalProgressionGameTest {
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    public static void selectedMiningToolSurvivesEquipmentReevaluation(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_AXE));
+        human.getData().setInventoryItem(20, new ItemStack(Items.STONE_PICKAXE));
+        BlockPos ore = helper.absolutePos(new BlockPos(3, 1, 2));
+        helper.setBlock(new BlockPos(3, 1, 2), Blocks.IRON_ORE.defaultBlockState());
+
+        helper.assertTrue(MiningToolSelector.equip(human, human.getData().getInventoryItem(20)), "Mining tool was not equipped");
+        helper.assertTrue(human.getMainHandItem().is(Items.STONE_PICKAXE),
+                "Mining selector did not put the correct pickaxe in the main hand");
+        human.tick();
+        helper.assertTrue(human.getMainHandItem().is(Items.STONE_PICKAXE),
+                "Combat reevaluation replaced the selected mining tool");
+        cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
     public static void progressiveBreakingSwingsMainHand(GameTestHelper helper) {
         Human human = human(helper, new BlockPos(2, 1, 2));
         BlockPos log = helper.absolutePos(new BlockPos(3, 1, 2));
         helper.setBlock(new BlockPos(3, 1, 2), Blocks.OAK_LOG.defaultBlockState());
         new ProgressiveBlockBreaker(human, log).tick();
         helper.assertTrue(human.swinging, "Progressive breaking did not animate the main hand");
+        cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    public static void hiddenOreDropsBesideMiner(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        BlockPos ore = helper.absolutePos(new BlockPos(4, 2, 2));
+        for (BlockPos relative : List.of(
+                new BlockPos(4, 2, 2), new BlockPos(3, 2, 2), new BlockPos(5, 2, 2),
+                new BlockPos(4, 1, 2), new BlockPos(4, 3, 2), new BlockPos(4, 2, 1), new BlockPos(4, 2, 3))) {
+            helper.setBlock(relative, Blocks.DEEPSLATE.defaultBlockState());
+        }
+        helper.setBlock(new BlockPos(4, 2, 2), Blocks.DEEPSLATE_IRON_ORE.defaultBlockState());
+        ProgressiveBlockBreaker breaker = new ProgressiveBlockBreaker(human, ore);
+        for (int tick = 0; tick < 400 && helper.getLevel().getBlockState(ore).is(Blocks.DEEPSLATE_IRON_ORE); tick++) {
+            breaker.tick();
+        }
+        boolean nearbyDrop = helper.getLevel().getEntitiesOfClass(ItemEntity.class, human.getBoundingBox().inflate(2.0D),
+                item -> item.getItem().is(Items.RAW_IRON)).stream().findAny().isPresent();
+        helper.assertTrue(nearbyDrop, "Hidden ore loot was left inside the solid ore cell instead of beside the miner");
         cleanup(human); helper.succeed();
     }
 
@@ -250,11 +317,81 @@ public final class HumanSurvivalProgressionGameTest {
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    public static void lootGoalDoesNotStareAtDelayedDrop(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        helper.getLevel().getEntitiesOfClass(ItemEntity.class,
+                human.getBoundingBox().inflate(12.0D, 6.0D, 12.0D)).forEach(ItemEntity::discard);
+        ItemEntity drop = new ItemEntity(helper.getLevel(), human.getX() + 0.5D, human.getY(), human.getZ(),
+                new ItemStack(Items.RAW_IRON));
+        drop.setPickUpDelay(10);
+        helper.getLevel().addFreshEntity(drop);
+        helper.assertTrue(!new ItemLootGoal(human, 1.0D).canUse(),
+                "Loot goal targeted a delayed drop and would only stare at it");
+        drop.kill(); cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
     public static void humanInventoryMatchesPlayerInventorySize(GameTestHelper helper) {
         Human human = human(helper, new BlockPos(2, 1, 2));
         helper.assertTrue(human.getData().getInventoryItemsSize() == 36,
                 "Human inventory does not match the player's 36 storage slots");
         cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    public static void ironMaterialsCraftMandatoryGear(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        human.getData().setInventoryItem(20, new ItemStack(Items.STONE_AXE));
+        human.getData().setInventoryItem(21, new ItemStack(Items.STONE_SWORD));
+        human.getData().setInventoryItem(22, new ItemStack(Items.STICK, 16));
+        human.getData().setInventoryItem(23, new ItemStack(Items.OAK_PLANKS, 16));
+        human.getData().setInventoryItem(24, new ItemStack(Items.IRON_INGOT, 4));
+        helper.setBlock(new BlockPos(3, 1, 2), Blocks.CRAFTING_TABLE.defaultBlockState());
+        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
+        goal.canUse();
+        human.tickCount += 10;
+        goal.canUse();
+        helper.assertTrue(SurvivalInventory.contains(human, stack -> stack.is(Items.IRON_PICKAXE))
+                        && SurvivalInventory.contains(human, stack -> stack.is(Items.SHIELD)),
+                "Four iron ingots plus wood did not craft the mandatory pickaxe and shield");
+        cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalCraftingIsolation", timeoutTicks = 40)
+    public static void humanReturnsToKnownTableToCraftIronGear(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        human.getData().setInventoryItem(20, new ItemStack(Items.STONE_AXE));
+        human.getData().setInventoryItem(21, new ItemStack(Items.STONE_SWORD));
+        human.getData().setInventoryItem(22, new ItemStack(Items.STICK, 16));
+        human.getData().setInventoryItem(23, new ItemStack(Items.OAK_PLANKS, 16));
+        human.getData().setInventoryItem(24, new ItemStack(Items.IRON_INGOT, 4));
+        helper.setBlock(new BlockPos(5, 1, 2), Blocks.CRAFTING_TABLE.defaultBlockState());
+        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
+        helper.assertTrue(goal.canUse(), "Human did not select a known crafting table outside immediate craft range");
+        goal.start();
+        human.teleportTo(helper.absolutePos(new BlockPos(4, 1, 2)).getX() + 0.5D,
+                helper.absolutePos(new BlockPos(4, 1, 2)).getY(),
+                helper.absolutePos(new BlockPos(4, 1, 2)).getZ() + 0.5D);
+        goal.tick();
+        helper.assertTrue(SurvivalInventory.contains(human, stack -> stack.is(Items.IRON_PICKAXE))
+                        && SurvivalInventory.contains(human, stack -> stack.is(Items.SHIELD)),
+                "Human reached the crafting table but did not craft mandatory iron gear");
+        goal.stop(); cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    public static void soundInvestigationHasHardTimeout(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.setInvestigateSound(helper.absolutePos(new BlockPos(8, 1, 8)));
+        InvestigateSoundGoal goal = new InvestigateSoundGoal(human, 1.0D);
+        helper.assertTrue(goal.canUse(), "Sound investigation fixture did not start");
+        goal.start();
+        for (int tick = 0; tick < 110; tick++) goal.tick();
+        helper.assertTrue(!goal.canContinueToUse() && !human.isInvestigatingSound(),
+                "Unreachable sound investigation did not time out");
+        goal.stop(); cleanup(human); helper.succeed();
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
@@ -275,6 +412,21 @@ public final class HumanSurvivalProgressionGameTest {
         SurvivalRecipeService.craft(human, stack -> stack.is(Items.OAK_PLANKS), false);
         boolean second = SurvivalRecipeService.craft(human, stack -> stack.is(Items.OAK_PLANKS), false).isPresent();
         helper.assertTrue(!second && SurvivalInventory.count(human, Items.OAK_PLANKS) == 4, "Crafting duplicated output without a second input");
+        cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    public static void craftingProbeDoesNotConsumeIngredients(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.getData().setInventoryItem(20, new ItemStack(Items.IRON_INGOT, 3));
+        human.getData().setInventoryItem(21, new ItemStack(Items.STICK, 2));
+
+        helper.assertTrue(SurvivalRecipeService.canCraft(human, stack -> stack.is(Items.IRON_PICKAXE), true),
+                "Crafting probe did not detect an available iron pickaxe recipe");
+        helper.assertTrue(SurvivalInventory.count(human, Items.IRON_INGOT) == 3
+                        && SurvivalInventory.count(human, Items.STICK) == 2
+                        && SurvivalInventory.count(human, Items.IRON_PICKAXE) == 0,
+                "Crafting probe consumed ingredients or inserted its result");
         cleanup(human); helper.succeed();
     }
 
@@ -343,14 +495,14 @@ public final class HumanSurvivalProgressionGameTest {
         cleanup(human); helper.succeed();
     }
 
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalExplorationIsolation", timeoutTicks = 40)
     public static void exploreFinishesWhenNavigationDone(GameTestHelper helper) {
         Human human = human(helper, new BlockPos(2, 1, 2));
-        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        human.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
         human.getData().setInventoryItem(20, new ItemStack(Items.STONE_AXE));
         human.getData().setInventoryItem(21, new ItemStack(Items.STONE_SWORD));
         human.getData().setInventoryItem(22, new ItemStack(Items.STICK, 16));
-        human.getData().setInventoryItem(23, new ItemStack(Items.IRON_INGOT, 16));
         human.getData().setInventoryItem(24, new ItemStack(Items.COOKED_BEEF, 16));
         human.getData().setInventoryItem(25, new ItemStack(Items.GOLDEN_APPLE));
         human.getData().setInventoryItem(26, new ItemStack(Items.COAL, 8));
@@ -526,9 +678,9 @@ public final class HumanSurvivalProgressionGameTest {
         cleanup(human); helper.succeed();
     }
 
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalCommandIsolation", timeoutTicks = 40)
     public static void inventoryCommandSelectsNearestHuman(GameTestHelper helper) {
-        Human near = human(helper, new BlockPos(3, 1, 2));
+        Human near = human(helper, new BlockPos(2, 1, 2));
         Human far = human(helper, new BlockPos(6, 1, 2));
         near.getData().setInventoryItem(20, new ItemStack(Items.OAK_LOG, 2));
         far.getData().setInventoryItem(20, new ItemStack(Items.COBBLESTONE, 2));
@@ -560,7 +712,16 @@ public final class HumanSurvivalProgressionGameTest {
 
     private static Human squadHuman(GameTestHelper helper, BlockPos pos, String persona, UUID squad) {
         Human human = human(helper, pos);
-        if (!human.setPersonaId(persona) || !human.setSquadId(squad)) throw new IllegalStateException("Could not configure squad human");
+        // A previous test may still own this fixed persona for one tick while
+        // its entity removal is processed. Sharing only needs a valid persona,
+        // so use the normal available-persona fallback in that case.
+        boolean assigned = human.setPersonaId(persona)
+                // Keep the sharing assertion in one faction if the requested
+                // unique persona is still reserved by a previous test.
+                || human.setPersonaId("juanclean")
+                || human.setPersonaId("ymiau")
+                || human.assignRandomPersona();
+        if (!assigned || !human.setSquadId(squad)) throw new IllegalStateException("Could not configure squad human");
         return human;
     }
 

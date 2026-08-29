@@ -29,13 +29,17 @@ public final class MiningToolSelector {
     }
 
     public static boolean equip(Human human, ItemStack selected) {
-        if (selected == human.getMainHandItem()) return true;
+        if (selected == human.getMainHandItem()) {
+            human.preserveMiningToolSelection();
+            return true;
+        }
         if (human.getData() == null) return false;
         for (int slot = 0; slot < human.getData().getInventoryItemsSize(); slot++) {
             if (human.getData().getInventoryItem(slot) == selected) {
                 ItemStack previous = human.getMainHandItem().copy();
                 human.setItemSlot(EquipmentSlot.MAINHAND, selected.copy());
                 human.getData().setInventoryItem(slot, previous);
+                human.preserveMiningToolSelection();
                 return true;
             }
         }

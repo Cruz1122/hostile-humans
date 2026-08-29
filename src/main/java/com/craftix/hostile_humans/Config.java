@@ -62,6 +62,7 @@ public class Config {
     public static ForgeConfigSpec.IntValue chestRevisitCooldownTicks;
     public static ForgeConfigSpec.BooleanValue enableSurvivalProgression;
     public static ForgeConfigSpec.IntValue resourceScanRadius;
+    public static ForgeConfigSpec.BooleanValue allowHiddenOreMining;
     public static ForgeConfigSpec.IntValue needsEvaluationIntervalTicks;
     public static ForgeConfigSpec.IntValue explorationRadius;
 
@@ -139,8 +140,10 @@ public class Config {
         SERVER_BUILDER.push("survivalProgression");
         enableSurvivalProgression = SERVER_BUILDER.comment("Allow needs-driven squad survival progression")
                 .define("enableSurvivalProgression", true);
-        resourceScanRadius = SERVER_BUILDER.comment("Maximum local radius for exposed resource searches")
+        resourceScanRadius = SERVER_BUILDER.comment("Maximum local radius for loaded resource searches")
                 .defineInRange("resourceScanRadius", 12, 4, 24);
+        allowHiddenOreMining = SERVER_BUILDER.comment("Allow survival progression to target loaded ores through solid blocks")
+                .define("allowHiddenOreMining", true);
         needsEvaluationIntervalTicks = SERVER_BUILDER.comment("Ticks between squad-needs evaluations")
                 .defineInRange("needsEvaluationIntervalTicks", 60, 40, 200);
         explorationRadius = SERVER_BUILDER.comment("Maximum radius for local progression exploration")

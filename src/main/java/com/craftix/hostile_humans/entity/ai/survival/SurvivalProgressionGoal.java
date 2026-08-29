@@ -36,7 +36,7 @@ import java.util.Map;
 
 /** Small needs -> opportunity -> action loop. Combat and critical existing goals preempt it. */
 public final class SurvivalProgressionGoal extends Goal {
-    private enum Mode { RESOURCE, STATION, HUNT, EXPLORE }
+    private enum Mode { RESOURCE, STATION, CRAFTING, HUNT, EXPLORE }
     private static final int HUNT_PATH_TIMEOUT_TICKS = 80;
     private static final int RESOURCE_PATH_TIMEOUT_TICKS = 35;
     private static final int STATION_PATH_TIMEOUT_TICKS = 35;
@@ -69,7 +69,7 @@ public final class SurvivalProgressionGoal extends Goal {
         nextDecisionTick = nextDecisionTick();
         SquadNeeds needs = SquadNeedsEvaluator.evaluate(human);
         if (tryShare(needs)) return false;
-        if (tryImmediateCraft(needs)) return false;
+        if (tryImmediateCraft()) return false;
         List<SquadNeed> neededResources = Arrays.stream(SquadNeed.values()).filter(needs::needs).toList();
         Optional<LocalResourceScanner.ResourceTarget> resource = LocalResourceScanner.findReachableFirst(human, neededResources,
                 pos -> failedResourceUntil.getOrDefault(pos, 0) > human.tickCount);
@@ -84,6 +84,7 @@ public final class SurvivalProgressionGoal extends Goal {
         }
         if (needs.needs(SquadNeed.FOOD) && selectAnimal(needs)) return true;
         if (selectFurnace(needs)) return true;
+        if (selectCraftingTable()) return true;
         need = needs.highestPriority().orElse(null);
         if (need == null) return false;
         return selectExplorationTarget();
@@ -120,6 +121,7 @@ public final class SurvivalProgressionGoal extends Goal {
         if (!eligible()) return;
         if (mode == Mode.RESOURCE) tickResource();
         else if (mode == Mode.STATION) tickStation();
+        else if (mode == Mode.CRAFTING) tickCrafting();
         else if (mode == Mode.EXPLORE && human.getNavigation().isDone()) {
             SquadNeedsEvaluator.invalidate(human);
             targetPos = null;
@@ -234,7 +236,31 @@ public final class SurvivalProgressionGoal extends Goal {
         }
     }
 
-    private boolean tryImmediateCraft(SquadNeeds needs) {
+    private void tickCrafting() {
+        if (targetPos == null || !human.level().getBlockState(targetPos).is(Blocks.CRAFTING_TABLE)) {
+            if (targetPos != null) SurvivalClaimManager.releaseStation(human, targetPos);
+            targetPos = null;
+            mode = null;
+            nextDecisionTick = nextDecisionTick();
+            return;
+        }
+        SurvivalClaimManager.claimStation(human, targetPos);
+        if (human.distanceToSqr(targetPos.getX() + 0.5D, targetPos.getY() + 0.5D, targetPos.getZ() + 0.5D) > 9.0D) {
+            if (human.getNavigation().isDone()) {
+                if (++navigationStalledTicks >= STATION_PATH_TIMEOUT_TICKS) { abortAction(); return; }
+                moveToTarget();
+            } else navigationStalledTicks = 0;
+            return;
+        }
+        human.getNavigation().stop();
+        tryImmediateCraft();
+        SurvivalClaimManager.releaseStation(human, targetPos);
+        targetPos = null;
+        mode = null;
+        nextDecisionTick = nextDecisionTick();
+    }
+
+    private boolean tryImmediateCraft() {
         boolean changed = false;
         for (int craft = 0; craft < 6; craft++) {
             int planks = SurvivalInventory.count(human, stack -> stack.is(ItemTags.PLANKS));
@@ -244,12 +270,13 @@ public final class SurvivalProgressionGoal extends Goal {
             if (!step) step = sticks < 4 && planks > 0
                     && SurvivalRecipeService.craft(human, stack -> stack.is(Items.STICK), false).isPresent();
             boolean table = hasNearbyStation(Blocks.CRAFTING_TABLE);
-            if (!table && SurvivalInventory.count(human, Items.CRAFTING_TABLE) == 0)
+            boolean knownTable = table || findStation(Blocks.CRAFTING_TABLE).isPresent();
+            if (!knownTable && SurvivalInventory.count(human, Items.CRAFTING_TABLE) == 0)
                 step |= SurvivalRecipeService.craft(human, stack -> stack.is(Items.CRAFTING_TABLE), false).isPresent();
-            if (!table && placeStation(Items.CRAFTING_TABLE, Blocks.CRAFTING_TABLE)) step = true;
+            if (!knownTable && placeStation(Items.CRAFTING_TABLE, Blocks.CRAFTING_TABLE)) step = true;
             table = hasNearbyStation(Blocks.CRAFTING_TABLE);
-            if (table) step |= craftNeededGear(needs, true);
-            if (table && needs.needs(SquadNeed.STRING))
+            if (table) step |= craftNeededGear();
+            if (table && !SurvivalInventory.contains(human, stack -> stack.getItem() instanceof BowItem))
                 step |= SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof BowItem, true).isPresent();
             if (!step) break;
             changed = true;
@@ -257,18 +284,80 @@ public final class SurvivalProgressionGoal extends Goal {
         return changed;
     }
 
-    private boolean craftNeededGear(SquadNeeds needs, boolean table) {
-        if (!table) return false;
+    private boolean craftNeededGear() {
         if (SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof PickaxeItem
+                && allowedToolUpgrade(stack, PickaxeItem.class)
                 && GearUpgradePolicy.usefulUpgrade(human, stack), true).isPresent()) return true;
         if (SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof AxeItem
+                && allowedToolUpgrade(stack, AxeItem.class)
                 && GearUpgradePolicy.usefulUpgrade(human, stack), true).isPresent()) return true;
         // Mining tools take precedence over combat upgrades so the human can
         // immediately continue gathering stone after the first wood stage.
         if (SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof SwordItem
+                && allowedToolUpgrade(stack, SwordItem.class)
                 && GearUpgradePolicy.usefulUpgrade(human, stack), true).isPresent()) return true;
-        return SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof net.minecraft.world.item.ArmorItem
+        if (!SurvivalInventory.contains(human, stack -> stack.is(Items.SHIELD))
+                && SurvivalRecipeService.craft(human, stack -> stack.is(Items.SHIELD), true).isPresent()) return true;
+        // Iron armor is an opportunistic upgrade. Keep the iron needed by the
+        // mandatory iron pickaxe and shield before spending any on armor.
+        if (SurvivalInventory.count(human, Items.IRON_INGOT) > mandatoryIronReserve()
+                && SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof net.minecraft.world.item.ArmorItem
+                && allowedArmorUpgrade(stack)
+                && GearUpgradePolicy.usefulUpgrade(human, stack), true).isPresent()) return true;
+        return (SurvivalInventory.count(human, Items.IRON_INGOT) > mandatoryIronReserve()
+                || SurvivalInventory.count(human, Items.DIAMOND) >= 4)
+                && SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof net.minecraft.world.item.ArmorItem
+                && allowedArmorUpgrade(stack)
                 && GearUpgradePolicy.usefulUpgrade(human, stack), true).isPresent();
+    }
+
+    private int mandatoryIronReserve() {
+        int reserve = 0;
+        if (!SurvivalInventory.contains(human, stack -> stack.getItem() instanceof PickaxeItem
+                && stack.getItem() instanceof net.minecraft.world.item.TieredItem tiered
+                && tiered.getTier().getLevel() >= 2)) reserve += 3;
+        if (!SurvivalInventory.contains(human, stack -> stack.is(Items.SHIELD))) reserve += 1;
+        return reserve;
+    }
+
+    private boolean allowedToolUpgrade(ItemStack candidate, Class<?> type) {
+        if (!(candidate.getItem() instanceof net.minecraft.world.item.TieredItem tiered)) return false;
+        int level = tiered.getTier().getLevel();
+        int current = SurvivalInventory.count(human, stack -> type.isInstance(stack.getItem())
+                && stack.getItem() instanceof net.minecraft.world.item.TieredItem owned
+                && owned.getTier().getLevel() >= level) > 0 ? level : -1;
+        if (type == PickaxeItem.class) {
+            if (level >= 3) return hasIronPickAndShield();
+            if (level == 2) return hasStoneUsefulTools();
+            return level == 0 && current < 0 || level == 1 && current < 1 || level == 2 && current < 2;
+        }
+        if (level == 1) return current < 1;
+        return level >= 3 && hasIronPickAndShield();
+    }
+
+    private boolean hasIronPickAndShield() {
+        return SurvivalInventory.contains(human, stack -> stack.getItem() instanceof PickaxeItem
+                        && stack.getItem() instanceof net.minecraft.world.item.TieredItem tiered
+                        && tiered.getTier().getLevel() >= 2)
+                && SurvivalInventory.contains(human, stack -> stack.is(Items.SHIELD));
+    }
+
+    private boolean hasStoneUsefulTools() {
+        return SurvivalInventory.contains(human, stack -> stack.getItem() instanceof PickaxeItem
+                        && stack.getItem() instanceof net.minecraft.world.item.TieredItem tiered
+                        && tiered.getTier().getLevel() >= 1)
+                && SurvivalInventory.contains(human, stack -> stack.getItem() instanceof AxeItem
+                        && stack.getItem() instanceof net.minecraft.world.item.TieredItem tiered
+                        && tiered.getTier().getLevel() >= 1)
+                && SurvivalInventory.contains(human, stack -> stack.getItem() instanceof SwordItem
+                        && stack.getItem() instanceof net.minecraft.world.item.TieredItem tiered
+                        && tiered.getTier().getLevel() >= 1);
+    }
+
+    private boolean allowedArmorUpgrade(ItemStack candidate) {
+        if (!(candidate.getItem() instanceof net.minecraft.world.item.ArmorItem armor)) return false;
+        if (armor.getMaterial() == net.minecraft.world.item.ArmorMaterials.DIAMOND) return hasIronPickAndShield();
+        return armor.getMaterial() == net.minecraft.world.item.ArmorMaterials.IRON;
     }
 
     private boolean tryShare(SquadNeeds needs) {
@@ -315,12 +404,19 @@ public final class SurvivalProgressionGoal extends Goal {
         int smeltable = SurvivalInventory.count(human, stack -> stack.is(Items.RAW_IRON) || stack.is(Items.RAW_GOLD)
                 || stack.is(Items.BEEF) || stack.is(Items.PORKCHOP) || stack.is(Items.CHICKEN) || stack.is(Items.MUTTON)
                 || stack.is(Items.RABBIT) || stack.is(Items.COD) || stack.is(Items.SALMON));
-        if (smeltable == 0) return false;
         Optional<BlockPos> furnace = findStation(Blocks.FURNACE);
-        if (furnace.isPresent() && human.level().getBlockEntity(furnace.get()) instanceof AbstractFurnaceBlockEntity furnaceEntity
-                && !furnaceEntity.getItem(0).isEmpty() && furnaceEntity.getItem(2).isEmpty()) {
-            // A batch is already cooking and there is nothing to retrieve.
-            // Do not claim MOVE just to stand beside the furnace.
+        if (furnace.isPresent() && human.level().getBlockEntity(furnace.get()) instanceof AbstractFurnaceBlockEntity furnaceEntity) {
+            if (!furnaceEntity.getItem(2).isEmpty()) {
+                // The input has already been consumed, so smeltable may be
+                // zero. The output still belongs to this survival action.
+            } else if (!furnaceEntity.getItem(0).isEmpty()) {
+                // A batch is already cooking and there is nothing to retrieve.
+                // Do not claim MOVE just to stand beside the furnace.
+                return false;
+            } else if (smeltable == 0) {
+                return false;
+            }
+        } else if (smeltable == 0) {
             return false;
         }
         if (furnace.isEmpty() && SurvivalInventory.count(human, Items.FURNACE) == 0) {
@@ -333,6 +429,40 @@ public final class SurvivalProgressionGoal extends Goal {
         targetPos = furnace.get();
         mode = Mode.STATION;
         return true;
+    }
+
+    private boolean selectCraftingTable() {
+        if (!canCraftNeededGear()
+                && (SurvivalInventory.contains(human, stack -> stack.getItem() instanceof BowItem)
+                || !SurvivalRecipeService.canCraft(human, stack -> stack.getItem() instanceof BowItem, true))) return false;
+        Optional<BlockPos> table = findStation(Blocks.CRAFTING_TABLE);
+        if (table.isEmpty() || !SurvivalClaimManager.claimStation(human, table.get())) return false;
+        targetPos = table.get();
+        mode = Mode.CRAFTING;
+        return true;
+    }
+
+    private boolean canCraftNeededGear() {
+        if (SurvivalRecipeService.canCraft(human, stack -> stack.getItem() instanceof PickaxeItem
+                && allowedToolUpgrade(stack, PickaxeItem.class)
+                && GearUpgradePolicy.usefulUpgrade(human, stack), true)) return true;
+        if (SurvivalRecipeService.canCraft(human, stack -> stack.getItem() instanceof AxeItem
+                && allowedToolUpgrade(stack, AxeItem.class)
+                && GearUpgradePolicy.usefulUpgrade(human, stack), true)) return true;
+        if (SurvivalRecipeService.canCraft(human, stack -> stack.getItem() instanceof SwordItem
+                && allowedToolUpgrade(stack, SwordItem.class)
+                && GearUpgradePolicy.usefulUpgrade(human, stack), true)) return true;
+        if (!SurvivalInventory.contains(human, stack -> stack.is(Items.SHIELD))
+                && SurvivalRecipeService.canCraft(human, stack -> stack.is(Items.SHIELD), true)) return true;
+        if (SurvivalInventory.count(human, Items.IRON_INGOT) > mandatoryIronReserve()
+                && SurvivalRecipeService.canCraft(human, stack -> stack.getItem() instanceof net.minecraft.world.item.ArmorItem
+                && allowedArmorUpgrade(stack)
+                && GearUpgradePolicy.usefulUpgrade(human, stack), true)) return true;
+        return (SurvivalInventory.count(human, Items.IRON_INGOT) > mandatoryIronReserve()
+                || SurvivalInventory.count(human, Items.DIAMOND) >= 4)
+                && SurvivalRecipeService.canCraft(human, stack -> stack.getItem() instanceof net.minecraft.world.item.ArmorItem
+                && allowedArmorUpgrade(stack)
+                && GearUpgradePolicy.usefulUpgrade(human, stack), true);
     }
 
     private Optional<BlockPos> findStation(net.minecraft.world.level.block.Block block) {

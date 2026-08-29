@@ -52,6 +52,7 @@ import net.minecraft.world.entity.ai.navigation.WaterBoundPathNavigation;
 import net.minecraft.world.entity.animal.AbstractSchoolingFish;
 import net.minecraft.world.entity.animal.Animal;
 import net.minecraft.world.entity.animal.Bee;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.monster.CrossbowAttackMob;
 import net.minecraft.world.entity.monster.EnderMan;
@@ -138,6 +139,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     public int cobwebsPlacedThisCombat;
     private boolean equipmentDirty = true;
     private boolean equipmentReevaluationQueued;
+    private int miningToolLockTicks;
     private boolean usefulInventoryEquipmentQueued;
     private boolean evaluatingEquipment;
     private int shieldDisablerSwapSlot = -1;
@@ -267,7 +269,9 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             }
 
             Entity sourceEntity = context.sourceEntity();
-            if (sourceEntity instanceof Human) {
+            if (sourceEntity instanceof Human
+                    || sourceEntity instanceof ItemEntity
+                    || sourceEntity instanceof ExperienceOrb) {
                 return false;
             }
             if (sourceEntity instanceof Projectile projectile && projectile.getOwner() instanceof Human) {
@@ -861,7 +865,14 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     @Override
     public void finalizeSpawn() {
         super.finalizeSpawn();
-        generateInventory(this, false);
+        // Preserve explicit equipment/inventory supplied by summon commands
+        // (debug scenarios and integrations). Fresh entities still receive
+        // the normal generated loadout.
+        boolean hasConfiguredItems = getData() != null
+                && (getData().getHandItems().stream().anyMatch(stack -> !stack.isEmpty())
+                || getData().getArmorItems().stream().anyMatch(stack -> !stack.isEmpty())
+                || getData().getInventoryItems().stream().anyMatch(stack -> !stack.isEmpty()));
+        if (!hasConfiguredItems) generateInventory(this, false);
         equipmentDirty = true;
     }
 
@@ -1241,6 +1252,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             this.equipmentReevaluationQueued = false;
             this.reevaluateEquipment();
         }
+        if (this.miningToolLockTicks > 0) this.miningToolLockTicks--;
         sanityClearPendingDrinkItem();
         if (this.lookForChestCooldown > 0) this.lookForChestCooldown--;
         if (!this.level().isClientSide && this.isSleepingOrLyingDown()) {
@@ -1629,7 +1641,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     /** Selects between owned ranged and melee weapons using distance hysteresis. */
     public void updateCombatWeaponSelection() {
-        if (level().isClientSide || getData() == null || isFleeing || isUsingItem()) return;
+        if (level().isClientSide || getData() == null || isFleeing || isUsingItem() || miningToolLockTicks > 0) return;
         if (restoreWeaponAfterShieldBreak()) return;
         if (shieldDisablerSwapSlot >= 0) return;
 
@@ -1676,13 +1688,20 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         this.equipmentDirty = true;
     }
 
+    /** Keeps a deliberately selected mining tool from being replaced by combat reevaluation. */
+    public void preserveMiningToolSelection() {
+        this.equipmentDirty = false;
+        this.equipmentReevaluationQueued = false;
+        this.miningToolLockTicks = 2;
+    }
+
     /** Defers selector goal mutation until after the current AI goal tick. */
     public void queueEquipmentReevaluation() {
         this.equipmentReevaluationQueued = true;
     }
 
     public void equipUsefulInventoryItems() {
-        if (level().isClientSide || getTarget() != null || getData() == null) return;
+        if (level().isClientSide || getTarget() != null || getData() == null || miningToolLockTicks > 0) return;
         for (int slot = 0; slot < getData().getInventoryItemsSize(); slot++) {
             equipItemIfPossible(getData().getInventoryItem(slot));
         }
@@ -1694,7 +1713,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     public void reevaluateEquipment() {
         if (level().isClientSide || evaluatingEquipment || isUsingItem()
-                || isFleeing || getData() == null) {
+                || isFleeing || getData() == null || miningToolLockTicks > 0) {
             return;
         }
         evaluatingEquipment = true;

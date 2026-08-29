@@ -8,10 +8,13 @@ import com.craftix.hostile_humans.entity.entities.Human;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+
+import java.util.List;
 
 /** Shared progressive break executor for navigation and needs-driven gathering. */
 public final class ProgressiveBlockBreaker {
@@ -42,6 +45,7 @@ public final class ProgressiveBlockBreaker {
 
     public WorldActionResult tick() {
         if (!WorldActionSupport.permitted(human) || requiresIdle && human.getTarget() != null
+                || human.distanceToSqr(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D) > 9.0D
                 || !human.level().getBlockState(pos).equals(expected)) return abort();
         var selected = MiningToolSelector.select(human, expected);
         if (selected.isEmpty() || !MiningToolSelector.equip(human, selected.get())) return abort();
@@ -49,7 +53,9 @@ public final class ProgressiveBlockBreaker {
         boolean correct = tool.isCorrectToolForDrops(expected);
         if (requireCorrectTool && expected.requiresCorrectToolForDrops() && !correct) return abort();
         boolean obtainsDrops = correct || !expected.requiresCorrectToolForDrops();
-        if (animationTicks++ % 6 == 0) human.swing(InteractionHand.MAIN_HAND);
+        // Re-trigger at roughly a player's visible mining cadence. LivingEntity
+        // still owns the swing animation and rejects impossible per-tick resets.
+        if (animationTicks++ % 4 == 0) human.swing(InteractionHand.MAIN_HAND);
         progress += MiningSpeedCalculator.progressPerTick(human, expected, pos, tool, obtainsDrops);
         int nextStage = Math.min(9, (int) (progress * 10.0F));
         if (nextStage != crackStage) {
@@ -59,12 +65,29 @@ public final class ProgressiveBlockBreaker {
         if (progress < 1.0F) return WorldActionResult.RUNNING;
         human.level().destroyBlockProgress(human.getId(), pos, -1);
         BlockEntity blockEntity = human.level().getBlockEntity(pos);
+        boolean exposedBeforeBreak = LocalResourceScanner.exposed(human, pos);
         ItemStack lootTool = tool.copy();
         tool.getItem().mineBlock(tool, human.level(), expected, pos, human);
         if (!human.level().destroyBlock(pos, false, human, Block.UPDATE_LIMIT)) return abort();
         if (human.level() instanceof ServerLevel serverLevel && obtainsDrops) {
-            Block.dropResources(expected, serverLevel, pos, blockEntity, human, lootTool);
+            if (exposedBeforeBreak) {
+                Block.dropResources(expected, serverLevel, pos, blockEntity, human, lootTool);
+            } else {
+                // Direct hidden-ore mining has no open face. Loot spawned in
+                // the old block cell would be unreachable, so eject the same
+                // vanilla-calculated drops beside the miner for normal pickup.
+                List<ItemStack> drops = Block.getDrops(expected, serverLevel, pos, blockEntity, human, lootTool);
+                for (ItemStack drop : drops) {
+                    ItemEntity item = new ItemEntity(serverLevel, human.getX(), human.getY() + 0.2D, human.getZ(), drop);
+                    item.setPickUpDelay(0);
+                    serverLevel.addFreshEntity(item);
+                }
+                expected.spawnAfterBreak(serverLevel, pos, lootTool, true);
+            }
         }
+        // Ignore the events emitted synchronously by this human's own block
+        // break and loot. They must not preempt pickup or crafting.
+        human.setInvestigateSound(BlockPos.ZERO);
         return WorldActionResult.SUCCESS;
     }
 

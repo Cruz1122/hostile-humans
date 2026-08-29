@@ -25,20 +25,25 @@ public final class SurvivalRecipeService {
 
     public static Optional<ItemStack> craft(Human human, Predicate<ItemStack> desired, boolean tableAvailable) {
         if (human.level().isClientSide || human.getData() == null) return Optional.empty();
-        List<CraftingRecipe> candidates = human.level().getRecipeManager().getAllRecipesFor(RecipeType.CRAFTING).stream()
-                .filter(recipe -> desired.test(recipe.getResultItem(human.level().registryAccess())))
-                .sorted(Comparator.comparingInt((CraftingRecipe recipe) ->
-                        GearUpgradePolicy.score(recipe.getResultItem(human.level().registryAccess()))).reversed())
-                .toList();
-        for (CraftingRecipe recipe : candidates) {
+        for (CraftingRecipe recipe : candidates(human, desired)) {
             ItemStack advertised = recipe.getResultItem(human.level().registryAccess());
             if (advertised.isEmpty()) continue;
             for (int size : tableAvailable ? new int[]{2, 3} : new int[]{2}) {
-                Optional<ItemStack> crafted = tryCraft(human, recipe, size);
+                Optional<ItemStack> crafted = tryCraft(human, recipe, size, true);
                 if (crafted.isPresent()) return crafted;
             }
         }
         return Optional.empty();
+    }
+
+    public static boolean canCraft(Human human, Predicate<ItemStack> desired, boolean tableAvailable) {
+        if (human.level().isClientSide || human.getData() == null) return false;
+        for (CraftingRecipe recipe : candidates(human, desired)) {
+            for (int size : tableAvailable ? new int[]{2, 3} : new int[]{2}) {
+                if (tryCraft(human, recipe, size, false).isPresent()) return true;
+            }
+        }
+        return false;
     }
 
     public static boolean hasRecipe(Human human, Predicate<ItemStack> desired) {
@@ -47,7 +52,15 @@ public final class SurvivalRecipeService {
                 .anyMatch(desired);
     }
 
-    private static Optional<ItemStack> tryCraft(Human human, CraftingRecipe recipe, int size) {
+    private static List<CraftingRecipe> candidates(Human human, Predicate<ItemStack> desired) {
+        return human.level().getRecipeManager().getAllRecipesFor(RecipeType.CRAFTING).stream()
+                .filter(recipe -> desired.test(recipe.getResultItem(human.level().registryAccess())))
+                .sorted(Comparator.comparingInt((CraftingRecipe recipe) ->
+                        GearUpgradePolicy.score(recipe.getResultItem(human.level().registryAccess()))).reversed())
+                .toList();
+    }
+
+    private static Optional<ItemStack> tryCraft(Human human, CraftingRecipe recipe, int size, boolean consume) {
         List<Ingredient> ingredients = recipe.getIngredients();
         long nonEmpty = ingredients.stream().filter(ingredient -> !ingredient.isEmpty()).count();
         if (nonEmpty > size * size) return Optional.empty();
@@ -81,6 +94,7 @@ public final class SurvivalRecipeService {
         for (ItemStack remainder : remainders) {
             if (!remainder.isEmpty() && !SurvivalInventory.canStore(human, remainder)) return Optional.empty();
         }
+        if (!consume) return Optional.of(output.copy());
         for (Reserved entry : reserved) if (entry.used) entry.stack.shrink(1);
         ItemStack insertion = output.copy();
         if (SurvivalInventory.insert(human, insertion) != output.getCount()) throw new IllegalStateException("Craft output insertion changed after validation");

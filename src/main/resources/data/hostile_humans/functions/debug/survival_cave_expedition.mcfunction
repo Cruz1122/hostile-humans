@@ -1,4 +1,4 @@
-# Integrated underground scenario: cave-height exploration, exposed/hidden ores, tool gating and upgrades.
+# Integrated underground scenario: local x-ray ore targeting, deepslate variants, tool gating and upgrades.
 # Run with: /function hostile_humans:debug/survival_cave_expedition
 schedule clear hostile_humans:debug/survival_interruptions_start
 kill @e[tag=hh_survival_integrated]
@@ -39,7 +39,7 @@ setblock ~20 ~ ~8 minecraft:deepslate_diamond_ore
 setblock ~22 ~1 ~10 minecraft:deepslate_diamond_ore
 setblock ~16 ~ ~10 minecraft:deepslate_iron_ore
 
-# Explicit no-xray controls: fully encased ores beside the navigable central tunnel.
+# Fully encased ores beside the navigable central tunnel: these are now direct x-ray targets.
 fill ~2 ~-1 ~-1 ~4 ~1 ~1 minecraft:deepslate
 setblock ~3 ~ ~ minecraft:deepslate_diamond_ore
 fill ~-4 ~-1 ~-1 ~-2 ~1 ~1 minecraft:deepslate
@@ -52,11 +52,11 @@ summon hostile_humans:human_tier1 ~-22 ~ ~-2 {PersonaId:"goncho",SquadId:[I;1802
 
 # Labels are inside the ceiling so they remain readable in spectator mode.
 summon minecraft:text_display ~-17 ~5 ~-9 {text:'{"text":"EARLY: COAL + IRON","color":"yellow","bold":true}',billboard:"center",background:1073741824,Tags:["hh_survival_integrated"]}
-summon minecraft:text_display ~ ~5 ~6 {text:'{"text":"HIDDEN ORES: MUST IGNORE","color":"red","bold":true}',billboard:"center",background:1073741824,Tags:["hh_survival_integrated"]}
+summon minecraft:text_display ~ ~5 ~6 {text:'{"text":"HIDDEN ORES: DIRECT TARGET","color":"red","bold":true}',billboard:"center",background:1073741824,Tags:["hh_survival_integrated"]}
 summon minecraft:text_display ~19 ~5 ~9 {text:'{"text":"DEEP: GOLD + DIAMOND","color":"aqua","bold":true}',billboard:"center",background:1073741824,Tags:["hh_survival_integrated"]}
 effect give @e[tag=hh_cave_squad] minecraft:glowing 1800 0 true
 tp @s ~ ~6 ~
 gamemode spectator @s
-tellraw @s {"text":"[HH SURVIVAL] Cave expedition ready: no surface Y targets, exposed-only ores and iron-pick diamond gating.","color":"gold"}
-tellraw @s {"text":"Expected: share wood/fuel, mine visible iron, smelt in real time, craft iron pick, then explore the deep chamber.","color":"aqua"}
-tellraw @s {"text":"The central encased gold/diamond controls must remain untouched.","color":"red"}
+tellraw @s {"text":"[HH SURVIVAL] Cave expedition ready: local direct ore targeting, deepslate support and iron-pick diamond gating.","color":"gold"}
+tellraw @s {"text":"Expected: mine stone after the first pick, obtain iron pick + shield, then complete diamond tools and armor.","color":"aqua"}
+tellraw @s {"text":"The central encased gold/diamond controls should be mined directly without opening a tunnel.","color":"red"}

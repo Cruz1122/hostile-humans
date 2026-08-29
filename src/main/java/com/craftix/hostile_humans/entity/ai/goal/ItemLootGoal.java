@@ -114,7 +114,7 @@ public final class ItemLootGoal extends Goal {
     }
 
     private boolean canPickUp(ItemEntity item) {
-        return item.isAlive() && !isTemporarilyIgnored(item)
+        return item.isAlive() && !item.hasPickUpDelay() && !isTemporarilyIgnored(item)
                 && HumanLootPolicy.isUseful(human, item.getItem())
                 && SurvivalInventory.canStore(human, item.getItem());
     }

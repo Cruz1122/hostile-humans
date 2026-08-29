@@ -11,6 +11,7 @@ import net.minecraft.world.level.block.LeavesBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.EnumMap;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Predicate;
@@ -39,6 +40,12 @@ public final class LocalResourceScanner {
     private static Optional<ResourceTarget> findFirst(Human human, List<SquadNeed> needs,
                                                        Predicate<BlockPos> ignored, boolean validatePath) {
         if (needs.isEmpty()) return Optional.empty();
+        // Ore is the intentional high-value target. If stone/deepslate is
+        // packed around a visible ore, do not select the surrounding block
+        // merely because STONE appears earlier in the enum.
+        List<SquadNeed> prioritizedNeeds = needs.stream()
+                .sorted(Comparator.comparingInt(need -> isOreNeed(need) ? 0 : 1))
+                .toList();
         int radius = Config.resourceScanRadius.get();
         BlockPos origin = human.blockPosition();
         EnumMap<SquadNeed, BlockPos> nearest = new EnumMap<>(SquadNeed.class);
@@ -48,13 +55,15 @@ public final class LocalResourceScanner {
             if (!human.level().hasChunkAt(mutable)) continue;
             BlockState state = human.level().getBlockState(mutable);
             SquadNeed matchingNeed = null;
-            for (SquadNeed need : needs) {
+            for (SquadNeed need : prioritizedNeeds) {
                 if (matches(state, need)) {
                     matchingNeed = need;
                     break;
                 }
             }
-            if (matchingNeed == null || ignored.test(mutable) || !exposed(human, mutable)
+            boolean hiddenOre = matchingNeed != null && isOreNeed(matchingNeed) && !exposed(human, mutable);
+            if (matchingNeed == null || ignored.test(mutable)
+                    || (!exposed(human, mutable) && (!hiddenOre || !Config.allowHiddenOreMining.get()))
                     || SurvivalClaimManager.resourceClaimedByOther(human, mutable)
                     || !toolCanHarvest(human, state)) continue;
             double distance = mutable.distSqr(origin);
@@ -63,7 +72,7 @@ public final class LocalResourceScanner {
                 distances.put(matchingNeed, distance);
             }
         }
-        for (SquadNeed need : needs) {
+        for (SquadNeed need : prioritizedNeeds) {
             BlockPos pos = nearest.get(need);
             if (pos == null) continue;
             if (!validatePath) return Optional.of(new ResourceTarget(need, pos));
@@ -71,7 +80,9 @@ public final class LocalResourceScanner {
             // A nearby block can be mined without a walkable cell at the
             // block's own height. This matters for vertical trees and ledges.
             if (withinGatherRange(human, pos)
-                    || interaction.isPresent() && reachable(human, interaction.get())) {
+                    && (Config.allowHiddenOreMining.get() && isOreNeed(need) || exposed(human, pos))
+                    || interaction.isPresent()
+                    && reachable(human, interaction.get())) {
                 return Optional.of(new ResourceTarget(need, pos));
             }
         }
@@ -114,7 +125,8 @@ public final class LocalResourceScanner {
         return switch (need) {
             case WOOD -> state.is(BlockTags.LOGS);
             case APPLES -> state.getBlock() instanceof LeavesBlock;
-            case STONE -> state.is(Blocks.STONE) || state.is(Blocks.COBBLESTONE) || state.is(Blocks.DEEPSLATE);
+            case STONE -> state.is(Blocks.STONE) || state.is(Blocks.COBBLESTONE)
+                    || state.is(Blocks.DEEPSLATE) || state.is(Blocks.COBBLED_DEEPSLATE);
             case FUEL -> state.is(BlockTags.COAL_ORES);
             case IRON -> state.is(BlockTags.IRON_ORES);
             case GOLD -> state.is(BlockTags.GOLD_ORES);
@@ -126,5 +138,9 @@ public final class LocalResourceScanner {
 
     private static boolean toolCanHarvest(Human human, BlockState state) {
         return MiningToolSelector.select(human, state).isPresent();
+    }
+
+    private static boolean isOreNeed(SquadNeed need) {
+        return need == SquadNeed.FUEL || need == SquadNeed.IRON || need == SquadNeed.GOLD || need == SquadNeed.DIAMOND;
     }
 }

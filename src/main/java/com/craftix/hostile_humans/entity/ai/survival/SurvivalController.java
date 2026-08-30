@@ -76,6 +76,23 @@ public final class SurvivalController {
         machine.suspend();
     }
 
+    public boolean isSuspended() {
+        return machine.snapshot().state() == SurvivalState.SUSPENDED;
+    }
+
+    /** Restores an interrupted intent to the normal acquire/act lifecycle. */
+    public void resumeAfterInterruption() {
+        if (!isSuspended()) return;
+        machine.resumeAfterInterruption();
+        SurvivalIntent intent = machine.snapshot().intent();
+        if (intent != null) machine.plan(intent);
+    }
+
+    /** Drops a completed or expired goal lifecycle without reporting a false interruption. */
+    public void reset() {
+        machine.reset();
+    }
+
     public void stop(SurvivalFailureReason reason) {
         machine.stop(reason);
     }

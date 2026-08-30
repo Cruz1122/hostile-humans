@@ -12,6 +12,8 @@ import com.craftix.hostile_humans.entity.ai.survival.SurvivalClaimManager;
 import com.craftix.hostile_humans.entity.ai.survival.SurvivalInventory;
 import com.craftix.hostile_humans.entity.ai.survival.SurvivalProgressionGoal;
 import com.craftix.hostile_humans.entity.ai.survival.SurvivalRecipeService;
+import com.craftix.hostile_humans.entity.ai.survival.SurvivalState;
+import com.craftix.hostile_humans.entity.ai.survival.SurvivalTask;
 import com.craftix.hostile_humans.entity.ai.action.MiningToolSelector;
 import com.craftix.hostile_humans.entity.ai.goal.ItemLootGoal;
 import com.craftix.hostile_humans.entity.ai.goal.InvestigateSoundGoal;
@@ -379,11 +381,8 @@ public final class HumanSurvivalProgressionGameTest {
         human.getData().setInventoryItem(21, new ItemStack(Items.STICK, 5));
         helper.setBlock(new BlockPos(3, 1, 2), Blocks.CRAFTING_TABLE.defaultBlockState());
 
-        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
-        for (int attempt = 0; attempt < 4; attempt++) {
-            goal.canUse();
-            human.tickCount += 10;
-        }
+        SurvivalProgressionGoal goal = startCraftingGoal(helper, human);
+        tickGoal(goal, 260);
 
         helper.assertTrue(SurvivalInventory.contains(human, stack -> stack.is(Items.DIAMOND_PICKAXE))
                         && SurvivalInventory.contains(human, stack -> stack.is(Items.DIAMOND_AXE))
@@ -621,8 +620,8 @@ public final class HumanSurvivalProgressionGameTest {
         // ambient vibration latched forever, which makes survival ineligible
         // and turns this integration test into a batch-order-dependent fixture.
         human.goalSelector.removeAllGoals(goal -> true);
-        human.goalSelector.addGoal(-30, new ItemLootGoal(human, 1.0D));
-        human.goalSelector.addGoal(-20, new SurvivalProgressionGoal(human));
+        human.goalSelector.addGoal(6, new ItemLootGoal(human, 1.0D));
+        human.goalSelector.addGoal(5, new SurvivalProgressionGoal(human));
         human.setHasDecidedToSleepTonight(true);
         human.setSleepingThisNight(false);
         human.setNoAi(false);
@@ -761,13 +760,12 @@ public final class HumanSurvivalProgressionGameTest {
         human.getData().setInventoryItem(23, new ItemStack(Items.OAK_PLANKS, 16));
         human.getData().setInventoryItem(24, new ItemStack(Items.IRON_INGOT, 4));
         helper.setBlock(new BlockPos(3, 1, 2), Blocks.CRAFTING_TABLE.defaultBlockState());
-        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
-        goal.canUse();
-        human.tickCount += 10;
-        goal.canUse();
+        SurvivalProgressionGoal goal = startCraftingGoal(helper, human);
+        tickGoal(goal, 60);
         helper.assertTrue(SurvivalInventory.contains(human, stack -> stack.is(Items.IRON_PICKAXE))
                         && SurvivalInventory.contains(human, stack -> stack.is(Items.SHIELD)),
-                "Four iron ingots plus wood did not craft the mandatory pickaxe and shield");
+                "Four iron ingots plus wood did not slowly craft the mandatory pickaxe and shield");
+        goal.stop();
         cleanup(human); helper.succeed();
     }
 
@@ -781,16 +779,243 @@ public final class HumanSurvivalProgressionGameTest {
         human.getData().setInventoryItem(23, new ItemStack(Items.OAK_PLANKS, 16));
         human.getData().setInventoryItem(24, new ItemStack(Items.IRON_INGOT, 4));
         helper.setBlock(new BlockPos(8, 1, 2), Blocks.CRAFTING_TABLE.defaultBlockState());
-        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
-        helper.assertTrue(goal.canUse(), "Human did not select a known crafting table outside immediate craft range");
-        goal.start();
+        SurvivalProgressionGoal goal = startCraftingGoal(helper, human);
         human.teleportTo(helper.absolutePos(new BlockPos(7, 1, 2)).getX() + 0.5D,
                 helper.absolutePos(new BlockPos(7, 1, 2)).getY(),
                 helper.absolutePos(new BlockPos(7, 1, 2)).getZ() + 0.5D);
-        goal.tick();
+        tickGoal(goal, 60);
         helper.assertTrue(SurvivalInventory.contains(human, stack -> stack.is(Items.IRON_PICKAXE))
                         && SurvivalInventory.contains(human, stack -> stack.is(Items.SHIELD)),
-                "Human reached the crafting table but did not craft mandatory iron gear");
+                "Human reached the crafting table but did not slowly craft mandatory iron gear");
+        goal.stop(); cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalNavigation", timeoutTicks = 40)
+    public static void interruptedSurvivalActionResumesInsteadOfResetting(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        prepareDiamondNavigator(human);
+        helper.setBlock(new BlockPos(4, 1, 2), Blocks.DIAMOND_ORE.defaultBlockState());
+        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
+
+        helper.assertTrue(goal.canUse(), "Diamond gathering action was not selected for interruption regression");
+        goal.start();
+        goal.stop();
+        helper.assertTrue(goal.snapshot().state() == SurvivalState.SUSPENDED,
+                "Stopping an active action discarded its resumable state: " + goal.snapshot());
+        helper.assertTrue(goal.canUse(), "Suspended survival action did not become eligible after preemption");
+        goal.start();
+        helper.assertTrue(goal.snapshot().state() == SurvivalState.NAVIGATE,
+                "Suspended survival action did not resume navigation: " + goal.snapshot());
+        goal.stop(); cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalNavigation", timeoutTicks = 40)
+    public static void resumedSurvivalActionAbortsWhenClaimIsLost(GameTestHelper helper) {
+        Human first = human(helper, new BlockPos(2, 1, 2));
+        Human second = human(helper, new BlockPos(6, 1, 4));
+        expandGround(helper);
+        prepareDiamondNavigator(first);
+        BlockPos ore = helper.absolutePos(new BlockPos(7, 1, 2));
+        helper.setBlock(new BlockPos(7, 1, 2), Blocks.DIAMOND_ORE.defaultBlockState());
+        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(first);
+
+        helper.assertTrue(goal.canUse(), "Diamond gathering action was not selected for claim interruption regression");
+        goal.start();
+        goal.stop();
+        helper.assertTrue(goal.snapshot().state() == SurvivalState.SUSPENDED,
+                "Stopping an active action did not leave resumable state: " + goal.snapshot());
+        helper.assertTrue(SurvivalClaimManager.claimResource(second, ore),
+                "Second human could not acquire the released resource claim");
+
+        goal.start();
+        goal.tick();
+        helper.assertTrue(goal.snapshot().state() == SurvivalState.BACKOFF
+                        && goal.snapshot().failureReason() == com.craftix.hostile_humans.entity.ai.survival.SurvivalFailureReason.CLAIM_UNAVAILABLE,
+                "Resumed action ignored a lost resource claim: " + goal.snapshot());
+        goal.stop(); cleanup(first, second); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalNavigation", timeoutTicks = 180)
+    public static void registeredSurvivalGoalFollowsPathToDiamond(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        isolateTemplateFixtures(human);
+        expandGround(helper);
+        prepareDiamondNavigator(human);
+        BlockPos ore = helper.absolutePos(new BlockPos(7, 1, 2));
+        helper.setBlock(new BlockPos(7, 1, 2), Blocks.DIAMOND_ORE.defaultBlockState());
+        human.targetSelector.removeAllGoals(ignored -> true);
+        human.setNoAi(false);
+        human.setNoGravity(false);
+        human.setOnGround(true);
+        human.setInvestigateSound(BlockPos.ZERO);
+
+        helper.startSequence().thenExecuteFor(150, () -> {
+            human.setInvestigateSound(BlockPos.ZERO);
+            human.setOnGround(true);
+        }).thenExecute(() -> {
+            helper.assertTrue(helper.getLevel().getBlockState(ore).isAir(),
+                    "Registered survival goal did not follow its path: human=" + human.blockPosition()
+                            + ", snapshot=" + human.getSurvivalSnapshot() + ", target=" + human.getTarget()
+                            + ", investigating=" + human.isInvestigatingSound() + ", swimming=" + human.isSwimming()
+                            + ", items=" + helper.getLevel().getEntitiesOfClass(ItemEntity.class,
+                            human.getBoundingBox().inflate(20.0D)).stream()
+                            .map(item -> item.getItem() + "@" + item.blockPosition()).toList()
+                            + ", running=" + human.goalSelector.getRunningGoals()
+                            .map(goal -> goal.getPriority() + ":" + goal.getGoal().getClass().getSimpleName()).toList());
+            cleanup(human); helper.succeed();
+        });
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalNavigation", timeoutTicks = 180)
+    public static void registeredSurvivalGoalWalksToCraftingTableBeforeCrafting(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        isolateTemplateFixtures(human);
+        expandGround(helper);
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_PICKAXE));
+        human.getData().setInventoryItem(20, new ItemStack(Items.STONE_AXE));
+        human.getData().setInventoryItem(21, new ItemStack(Items.STONE_SWORD));
+        human.getData().setInventoryItem(22, new ItemStack(Items.STICK, 16));
+        human.getData().setInventoryItem(23, new ItemStack(Items.OAK_PLANKS, 16));
+        human.getData().setInventoryItem(24, new ItemStack(Items.IRON_INGOT, 4));
+        human.getData().setInventoryItem(25, new ItemStack(Items.COOKED_BEEF, 8));
+        BlockPos table = helper.absolutePos(new BlockPos(6, 1, 2));
+        helper.setBlock(new BlockPos(6, 1, 2), Blocks.CRAFTING_TABLE.defaultBlockState());
+
+        human.targetSelector.removeAllGoals(ignored -> true);
+        human.setNoAi(false);
+        human.setNoGravity(false);
+        human.setOnGround(true);
+        human.setInvestigateSound(BlockPos.ZERO);
+        boolean[] crafted = {false};
+        BlockPos[] craftPosition = {BlockPos.ZERO};
+
+        helper.startSequence().thenExecuteFor(150, () -> {
+            human.setInvestigateSound(BlockPos.ZERO);
+            if (!crafted[0] && SurvivalInventory.contains(human, stack -> stack.is(Items.IRON_PICKAXE))
+                    && SurvivalInventory.contains(human, stack -> stack.is(Items.SHIELD))) {
+                crafted[0] = true;
+                craftPosition[0] = human.blockPosition();
+            }
+            human.setOnGround(true);
+        }).thenExecute(() -> {
+            helper.assertTrue(crafted[0], "Live survival goal never crafted mandatory iron gear at the table: human="
+                    + human.blockPosition() + ", snapshot=" + human.getSurvivalSnapshot() + ", running="
+                    + human.goalSelector.getRunningGoals()
+                    .map(goal -> goal.getPriority() + ":" + goal.getGoal().getClass().getSimpleName()).toList()
+                    + ", items=" + helper.getLevel().getEntitiesOfClass(ItemEntity.class,
+                    human.getBoundingBox().inflate(20.0D)).stream()
+                    .map(item -> item.getItem() + "@" + item.blockPosition()).toList());
+            helper.assertTrue(craftPosition[0].distManhattan(table) <= 2,
+                    "Human crafted before reaching the table interaction cell: position=" + craftPosition[0]
+                            + ", table=" + table);
+            cleanup(human); helper.succeed();
+        });
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalNavigation", timeoutTicks = 80)
+    public static void craftingPacesIndividualGearAndFacesTable(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        human.getData().setInventoryItem(20, new ItemStack(Items.DIAMOND, 33));
+        human.getData().setInventoryItem(21, new ItemStack(Items.STICK, 5));
+        BlockPos table = helper.absolutePos(new BlockPos(3, 1, 2));
+        helper.setBlock(new BlockPos(3, 1, 2), Blocks.CRAFTING_TABLE.defaultBlockState());
+
+        SurvivalProgressionGoal goal = startCraftingGoal(helper, human);
+        int previousArmor = 0;
+        int firstArmorTick = -1;
+        int secondArmorTick = -1;
+        for (int tick = 0; tick < 220 && secondArmorTick < 0; tick++) {
+            goal.tick();
+            human.getLookControl().tick();
+            int armor = SurvivalInventory.count(human,
+                    stack -> stack.getItem() instanceof net.minecraft.world.item.ArmorItem);
+            if (armor > previousArmor) {
+                if (firstArmorTick < 0) firstArmorTick = tick;
+                else if (secondArmorTick < 0) secondArmorTick = tick;
+                previousArmor = armor;
+            }
+        }
+
+        Vec3 toTable = Vec3.atCenterOf(table).subtract(human.getEyePosition()).normalize();
+        helper.assertTrue(firstArmorTick >= 0 && secondArmorTick >= firstArmorTick + 20,
+                "Crafting produced armor pieces too quickly: first=" + firstArmorTick
+                        + ", second=" + secondArmorTick);
+        helper.assertTrue(human.getViewVector(1.0F).dot(toTable) > 0.75D,
+                "Human did not look at the crafting table while crafting: view=" + human.getViewVector(1.0F)
+                        + ", target=" + toTable);
+        goal.stop(); cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalNavigation", timeoutTicks = 80)
+    public static void stalledResourceAdvancesAlongLookDirection(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        expandGround(helper);
+        prepareDiamondNavigator(human);
+        helper.setBlock(new BlockPos(2, 1, 5), Blocks.DIAMOND_ORE.defaultBlockState());
+        human.goalSelector.removeAllGoals(ignored -> true);
+        human.targetSelector.removeAllGoals(ignored -> true);
+        human.setYRot(0.0F);
+        human.setXRot(0.0F);
+
+        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
+        helper.assertTrue(goal.canUse(), "Diamond gathering action was not selected for the stalled-navigation regression");
+        goal.start();
+        human.setNoAi(true);
+        Vec3 before = human.position();
+        for (int tick = 0; tick < 25; tick++) {
+            human.getNavigation().stop();
+            goal.tick();
+        }
+        human.setNoAi(false);
+
+        helper.startSequence().thenExecuteFor(20, () -> {
+            human.setOnGround(true);
+            goal.tick();
+        }).thenExecute(() -> {
+            helper.assertTrue(human.getZ() > before.z + 1.0D,
+                    "Stalled resource action did not nudge the human along its look direction: before="
+                            + before + ", after=" + human.position());
+            goal.stop(); cleanup(human); helper.succeed();
+        });
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalNavigation", timeoutTicks = 80)
+    public static void resourceNavigationEquipsRequiredToolBeforeArrival(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        expandGround(helper);
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.STONE_SWORD));
+        human.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        human.getData().setInventoryItem(20, new ItemStack(Items.IRON_PICKAXE));
+        human.getData().setInventoryItem(21, new ItemStack(Items.STONE_AXE));
+        human.getData().setInventoryItem(22, new ItemStack(Items.STONE_SWORD));
+        human.getData().setInventoryItem(23, new ItemStack(Items.STICK, 5));
+        human.getData().setInventoryItem(24, new ItemStack(Items.COOKED_BEEF, 8));
+        human.getData().setInventoryItem(25, new ItemStack(Items.COAL, 2));
+        BlockPos ore = helper.absolutePos(new BlockPos(7, 1, 2));
+        helper.setBlock(new BlockPos(7, 1, 2), Blocks.DIAMOND_ORE.defaultBlockState());
+
+        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
+        helper.assertTrue(goal.canUse(), "Diamond resource was not selected for tool-switch regression");
+        goal.start();
+        human.setNoAi(true);
+        goal.tick();
+        helper.assertTrue(human.getMainHandItem().is(Items.IRON_PICKAXE),
+                "Human kept an unsuitable tool while navigating to diamond ore: " + human.getMainHandItem());
+        helper.assertTrue(helper.getLevel().getBlockState(ore).is(Blocks.DIAMOND_ORE),
+                "Tool-switch fixture changed the resource before arrival");
+        goal.stop(); cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    public static void soundInvestigationBlocksNewSurvivalPlan(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        prepareDiamondNavigator(human);
+        helper.setBlock(new BlockPos(4, 1, 2), Blocks.DIAMOND_ORE.defaultBlockState());
+        human.setInvestigateSound(helper.absolutePos(new BlockPos(8, 1, 8)));
+        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
+
+        helper.assertTrue(!goal.canUse(), "Survival progression preempted an active sound investigation");
         goal.stop(); cleanup(human); helper.succeed();
     }
 
@@ -865,10 +1090,11 @@ public final class HumanSurvivalProgressionGameTest {
         Human human = human(helper, new BlockPos(2, 1, 2));
         human.getData().setInventoryItem(20, new ItemStack(Items.OAK_LOG, 2));
         helper.setBlock(new BlockPos(3, 1, 2), Blocks.CRAFTING_TABLE.defaultBlockState());
-        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
-        goal.canUse();
+        SurvivalProgressionGoal goal = startCraftingGoal(helper, human);
+        tickGoal(goal, 80);
         helper.assertTrue(SurvivalInventory.contains(human, stack -> stack.is(Items.WOODEN_PICKAXE)),
-                "Progression stopped after gathering wood instead of crafting a wooden pickaxe");
+                "Progression stopped after gathering wood instead of slowly crafting a wooden pickaxe");
+        goal.stop();
         cleanup(human); helper.succeed();
     }
 
@@ -898,12 +1124,13 @@ public final class HumanSurvivalProgressionGameTest {
         human.getData().setInventoryItem(20, new ItemStack(Items.COBBLESTONE, 9));
         human.getData().setInventoryItem(21, new ItemStack(Items.STICK, 5));
         helper.setBlock(new BlockPos(3, 1, 2), Blocks.CRAFTING_TABLE.defaultBlockState());
-        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
-        goal.canUse();
+        SurvivalProgressionGoal goal = startCraftingGoal(helper, human);
+        tickGoal(goal, 100);
         helper.assertTrue(SurvivalInventory.contains(human, stack -> stack.is(Items.STONE_PICKAXE))
                         && SurvivalInventory.contains(human, stack -> stack.is(Items.STONE_AXE))
                         && SurvivalInventory.contains(human, stack -> stack.is(Items.STONE_SWORD)),
                 "Stocked cobblestone did not produce the stone pickaxe, axe and sword");
+        goal.stop();
         cleanup(human); helper.succeed();
     }
 
@@ -1167,6 +1394,54 @@ public final class HumanSurvivalProgressionGameTest {
         cleanup(human); helper.succeed();
     }
 
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalNavigation", timeoutTicks = 100)
+    public static void progressionPacesFurnaceOutputRetrievalAndFacesFurnace(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.DIAMOND_PICKAXE));
+        human.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        human.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.DIAMOND_HELMET));
+        human.setItemSlot(EquipmentSlot.CHEST, new ItemStack(Items.DIAMOND_CHESTPLATE));
+        human.setItemSlot(EquipmentSlot.LEGS, new ItemStack(Items.DIAMOND_LEGGINGS));
+        human.setItemSlot(EquipmentSlot.FEET, new ItemStack(Items.DIAMOND_BOOTS));
+        human.getData().setInventoryItem(20, new ItemStack(Items.DIAMOND_AXE));
+        human.getData().setInventoryItem(21, new ItemStack(Items.DIAMOND_SWORD));
+        human.getData().setInventoryItem(22, new ItemStack(Items.COOKED_BEEF, 8));
+        human.getData().setInventoryItem(23, new ItemStack(Items.GOLDEN_APPLE));
+        BlockPos furnacePos = helper.absolutePos(new BlockPos(6, 1, 2));
+        helper.setBlock(new BlockPos(6, 1, 2), Blocks.FURNACE.defaultBlockState());
+        AbstractFurnaceBlockEntity furnace = (AbstractFurnaceBlockEntity) helper.getLevel().getBlockEntity(furnacePos);
+        furnace.setItem(2, new ItemStack(Items.COOKED_BEEF));
+        furnace.setChanged();
+
+        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
+        helper.assertTrue(goal.canUse() && goal.snapshot().intent() != null
+                        && goal.snapshot().intent().task() == SurvivalTask.SMELT,
+                "Ready furnace output did not select a smelting action: " + goal.snapshot());
+        goal.start();
+        human.teleportTo(furnacePos.getX() - 0.5D, furnacePos.getY(), furnacePos.getZ() + 0.5D);
+        int initialCookedFood = SurvivalInventory.count(human, Items.COOKED_BEEF);
+        helper.assertTrue(initialCookedFood == 8,
+                "Furnace fixture did not retain its initial food reserve");
+        goal.tick();
+        helper.assertTrue(!furnace.getItem(2).isEmpty()
+                        && SurvivalInventory.count(human, Items.COOKED_BEEF) == initialCookedFood,
+                "Furnace output was retrieved without the station interaction delay");
+
+        for (int tick = 0; tick < 20 && !furnace.getItem(2).isEmpty(); tick++) {
+            goal.tick();
+            human.getLookControl().tick();
+        }
+
+        Vec3 toFurnace = Vec3.atCenterOf(furnacePos).subtract(human.getEyePosition()).normalize();
+        helper.assertTrue(SurvivalInventory.count(human, Items.COOKED_BEEF) == initialCookedFood + 1
+                        && furnace.getItem(2).isEmpty(),
+                "Paced furnace interaction did not retrieve exactly one output");
+        helper.assertTrue(human.getViewVector(1.0F).dot(toFurnace) > 0.75D,
+                "Human did not look at the furnace while retrieving output: view=" + human.getViewVector(1.0F)
+                        + ", target=" + toFurnace);
+        goal.stop(); cleanup(human); helper.succeed();
+    }
+
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
     public static void squadMemberCanShareMaterial(GameTestHelper helper) {
         UUID squad = UUID.randomUUID();
@@ -1238,6 +1513,25 @@ public final class HumanSurvivalProgressionGameTest {
         return human;
     }
 
+    private static SurvivalProgressionGoal startCraftingGoal(GameTestHelper helper, Human human) {
+        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
+        for (int attempt = 0; attempt < 12; attempt++) {
+            if (goal.canUse()) {
+                helper.assertTrue(goal.snapshot().intent() != null
+                                && goal.snapshot().intent().task() == SurvivalTask.CRAFT,
+                        "Fixture selected a non-crafting action: " + goal.snapshot());
+                goal.start();
+                return goal;
+            }
+            human.tickCount += 10;
+        }
+        throw new AssertionError("Crafting fixture never selected a table action: " + goal.snapshot());
+    }
+
+    private static void tickGoal(SurvivalProgressionGoal goal, int ticks) {
+        for (int tick = 0; tick < ticks && goal.canContinueToUse(); tick++) goal.tick();
+    }
+
     private static Human squadHuman(GameTestHelper helper, BlockPos pos, String persona, UUID squad) {
         Human human = human(helper, pos);
         // A previous test may still own this fixed persona for one tick while
@@ -1260,6 +1554,35 @@ public final class HumanSurvivalProgressionGameTest {
         human.getData().setInventoryItem(22, new ItemStack(Items.STICK, 16));
         human.getData().setInventoryItem(23, new ItemStack(Items.IRON_INGOT, 32));
         human.getData().setInventoryItem(24, new ItemStack(Items.GOLDEN_APPLE));
+    }
+
+    private static void prepareDiamondNavigator(Human human) {
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        human.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        human.getData().setInventoryItem(20, new ItemStack(Items.STONE_AXE));
+        human.getData().setInventoryItem(21, new ItemStack(Items.STONE_SWORD));
+        human.getData().setInventoryItem(22, new ItemStack(Items.STICK, 5));
+        human.getData().setInventoryItem(23, new ItemStack(Items.COOKED_BEEF, 8));
+        human.getData().setInventoryItem(24, new ItemStack(Items.GOLDEN_APPLE));
+        human.getData().setInventoryItem(25, new ItemStack(Items.COAL, 2));
+    }
+
+    private static void expandGround(GameTestHelper helper) {
+        for (int x = -2; x <= 10; x++) for (int z = -2; z <= 8; z++) {
+            helper.setBlock(new BlockPos(x, 0, z), Blocks.GRASS_BLOCK.defaultBlockState());
+            for (int y = 1; y <= 5; y++) helper.setBlock(new BlockPos(x, y, z), Blocks.AIR.defaultBlockState());
+        }
+    }
+
+    private static void isolateTemplateFixtures(Human human) {
+        human.level().getEntitiesOfClass(Human.class, human.getBoundingBox().inflate(8.0D)).stream()
+                .filter(other -> other != human)
+                .forEach(other -> {
+                    SurvivalClaimManager.releaseAll(other);
+                    other.discard();
+                });
+        human.level().getEntitiesOfClass(ItemEntity.class, human.getBoundingBox().inflate(8.0D))
+                .forEach(ItemEntity::discard);
     }
 
     private static void cleanup(Human... humans) {

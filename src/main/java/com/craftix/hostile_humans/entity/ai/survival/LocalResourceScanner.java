@@ -89,7 +89,7 @@ public final class LocalResourceScanner {
                 // block's own height. This matters for vertical trees and ledges.
                 if (withinGatherRange(human, pos)
                         && (Config.allowHiddenOreMining.get() && isOreNeed(need) || exposed(human, pos))
-                        || interaction.isPresent() && reachable(human, interaction.get())) {
+                        || interaction.isPresent() && reachable(human, pos)) {
                     return Optional.of(new ResourceTarget(need, pos));
                 }
             }
@@ -113,13 +113,16 @@ public final class LocalResourceScanner {
         return ProgressiveBlockBreaker.withinReach(human, resource);
     }
 
-    private static boolean reachable(Human human, BlockPos interaction) {
-        if (!SurvivalQueryBudget.tryPath(human)) return false;
-        var path = human.getNavigation().createPath(interaction, 0);
-        return path != null && path.canReach();
+    private static boolean reachable(Human human, BlockPos resource) {
+        return SurvivalPathing.createPath(human, interactionPositions(human, resource), 0).isPresent();
     }
 
     public static Optional<BlockPos> interactionPosition(Human human, BlockPos resource) {
+        return interactionPositions(human, resource).stream().findFirst();
+    }
+
+    /** Returns supported, empty cells from which the resource can be reached. */
+    public static List<BlockPos> interactionPositions(Human human, BlockPos resource) {
         BlockPos origin = human.blockPosition();
         return BlockPos.betweenClosedStream(resource.offset(-2, -2, -2), resource.offset(2, 3, 2))
                 .filter(human.level()::hasChunkAt)
@@ -144,10 +147,11 @@ public final class LocalResourceScanner {
                 // resource first. Choosing only by distance to the human can
                 // leave the human two blocks away from a same-level block,
                 // even when an adjacent cell is available.
-                .min(Comparator
+                .sorted(Comparator
                         .comparingDouble((BlockPos pos) -> resource.distToCenterSqr(
-                                pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D))
-                        .thenComparingDouble(pos -> pos.distSqr(origin)));
+                        pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D))
+                        .thenComparingDouble(pos -> pos.distSqr(origin)))
+                .toList();
     }
 
     public static boolean matches(BlockState state, SquadNeed need) {

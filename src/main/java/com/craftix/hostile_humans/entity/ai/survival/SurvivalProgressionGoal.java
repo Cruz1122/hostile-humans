@@ -2,10 +2,12 @@ package com.craftix.hostile_humans.entity.ai.survival;
 
 import com.craftix.hostile_humans.Config;
 import com.craftix.hostile_humans.HostileHumans;
+import com.craftix.hostile_humans.entity.ai.action.MiningToolSelector;
 import com.craftix.hostile_humans.entity.ai.action.WorldActionResult;
 import com.craftix.hostile_humans.entity.ai.action.WorldActionSupport;
 import com.craftix.hostile_humans.entity.ai.squad.SquadManager;
 import com.craftix.hostile_humans.entity.entities.Human;
+import com.craftix.hostile_humans.entity.type.human.HumanLootPolicy;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -18,6 +20,7 @@ import net.minecraft.world.entity.animal.Chicken;
 import net.minecraft.world.entity.animal.Cow;
 import net.minecraft.world.entity.animal.Pig;
 import net.minecraft.world.entity.animal.Sheep;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.AxeItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -27,6 +30,7 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.Comparator;
 import java.util.EnumSet;
@@ -46,6 +50,15 @@ public final class SurvivalProgressionGoal extends Goal {
     private static final int RESOURCE_PATH_TIMEOUT_TICKS = 80;
     private static final int STATION_PATH_TIMEOUT_TICKS = 60;
     private static final int EXPLORE_TIMEOUT_TICKS = 140;
+    private static final int CRAFTING_ACTION_TIMEOUT_TICKS = 400;
+    private static final int STATION_ENTRY_DELAY_TICKS = 10;
+    private static final int CRAFTING_PACE_TICKS = 20;
+    private static final int FURNACE_INTERACTION_PACE_TICKS = 10;
+    private static final int RESOURCE_FORWARD_NUDGE_TICKS = 20;
+    private static final int RESOURCE_FORWARD_NUDGE_DURATION_TICKS = 14;
+    private static final double RESOURCE_MOVEMENT_EPSILON_SQR = 0.0004D;
+    private static final double RESOURCE_FORWARD_NUDGE_DISTANCE = 3.0D;
+    private static final double RESOURCE_FORWARD_NUDGE_SPEED = 3.2D;
     private static final double RESOURCE_INTERACTION_TOLERANCE_SQR = 2.25D;
 
     private final Human human;
@@ -61,6 +74,12 @@ public final class SurvivalProgressionGoal extends Goal {
     private double closestAnimalDistanceSqr;
     private int nextDecisionTick;
     private int navigationStalledTicks;
+    private BlockPos resourceProgressTarget;
+    private Vec3 lastResourcePosition;
+    private int resourceNoProgressTicks;
+    private Vec3 resourceNudgeTarget;
+    private int resourceNudgeTicks;
+    private int stationInteractionCooldownTicks;
     private final Map<BlockPos, Integer> failedResourceUntil = new HashMap<>();
     private final Map<net.minecraft.world.level.block.Block, Optional<BlockPos>> stationCache = new HashMap<>();
     private int stationCacheTick = Integer.MIN_VALUE;
@@ -84,7 +103,11 @@ public final class SurvivalProgressionGoal extends Goal {
     public boolean canUse() {
         // Survival decisions are deliberately less urgent than combat and
         // should not perform world scans every time GoalSelector checks us.
-        if (!eligible() || human.tickCount < nextDecisionTick || !controller.requestAssessment()) return false;
+        if (!activeActionEligible() || human.isInvestigatingSound()) return false;
+        // A preempting goal may temporarily own MOVE. Keep the selected action
+        // instead of rebuilding the whole plan after every such interruption.
+        if (controller.isSuspended()) return resumableAction();
+        if (human.tickCount < nextDecisionTick || !controller.requestAssessment()) return false;
         failedResourceUntil.entrySet().removeIf(entry -> entry.getValue() <= human.tickCount);
         nextDecisionTick = nextDecisionTick();
         controller.beginPlanning();
@@ -98,12 +121,24 @@ public final class SurvivalProgressionGoal extends Goal {
      * intent/lease; world mutation is left to the active task tick.
      */
     private boolean planNextAction() {
+        return planNextAction(!human.isInvestigatingSound());
+    }
+
+    private boolean planNextAction(boolean allowExploration) {
+        if (human.isInvestigatingSound()) return false;
         SquadNeeds needs = SquadNeedsEvaluator.evaluate(human);
         if (tryShare(needs)) {
             controller.completeImmediate(new SurvivalIntent(SurvivalTask.SHARE, SurvivalObjective.FOOD));
             return false;
         }
-        if (tryImmediateCraft()) return false;
+        if (prepareImmediateCraftingMaterials()) return false;
+        // Table crafting is a real station action. Do not complete the gear
+        // recipes in the planning pass, otherwise a whole set of tools or
+        // armor can appear in one server tick without facing the table.
+        if (selectCraftingTable()) {
+            controller.plan(new SurvivalIntent(SurvivalTask.CRAFT, SurvivalObjective.IRON_GEAR));
+            return true;
+        }
 
         List<SquadNeed> neededResources = Arrays.stream(SquadNeed.values()).filter(needs::needs).toList();
         Optional<LocalResourceScanner.ResourceTarget> resource = LocalResourceScanner.findReachableFirst(human, neededResources,
@@ -126,12 +161,8 @@ public final class SurvivalProgressionGoal extends Goal {
             controller.plan(new SurvivalIntent(SurvivalTask.SMELT, SurvivalObjective.IRON_GEAR));
             return true;
         }
-        if (selectCraftingTable()) {
-            controller.plan(new SurvivalIntent(SurvivalTask.CRAFT, SurvivalObjective.IRON_GEAR));
-            return true;
-        }
         need = needs.highestPriority().orElse(null);
-        if (need == null || !selectExplorationTarget()) return false;
+        if (!allowExploration || need == null || !selectExplorationTarget()) return false;
         controller.plan(new SurvivalIntent(SurvivalTask.EXPLORE, SurvivalObjective.EXPLORATION));
         return true;
     }
@@ -152,14 +183,29 @@ public final class SurvivalProgressionGoal extends Goal {
             return activeActionEligible() && actionTicks < 160
                     && (animal != null || controller.snapshot().state() == SurvivalState.PLANNING);
         }
+        // A successful mine leaves a real drop beside the human. Yield the
+        // MOVE flag while the action is in PLANNING so the registered loot
+        // goal (priority 6) can collect it before survival picks a new target
+        // (priority 5).
+        if (mode == Mode.RESOURCE && controller.snapshot().state() == SurvivalState.PLANNING
+                && hasNearbyUsefulLoot()) return false;
         boolean actionEligible = mode == Mode.EXPLORE ? eligible() : activeActionEligible();
-        return actionEligible && actionTicks < (mode == Mode.EXPLORE ? EXPLORE_TIMEOUT_TICKS : 160);
+        int timeout = switch (mode) {
+            case EXPLORE -> EXPLORE_TIMEOUT_TICKS;
+            case CRAFTING -> CRAFTING_ACTION_TIMEOUT_TICKS;
+            default -> 160;
+        };
+        return actionEligible && actionTicks < timeout;
     }
 
     @Override
     public void start() {
+        if (controller.isSuspended()) controller.resumeAfterInterruption();
         actionTicks = 0;
         navigationStalledTicks = 0;
+        resetResourceProgress();
+        stationInteractionCooldownTicks = mode == Mode.STATION ? FURNACE_INTERACTION_PACE_TICKS
+                : mode == Mode.CRAFTING ? STATION_ENTRY_DELAY_TICKS : 0;
         controller.ensureActing();
         if (mode == Mode.HUNT && animal != null) {
             huntStalledTicks = 0;
@@ -210,6 +256,7 @@ public final class SurvivalProgressionGoal extends Goal {
 
     @Override
     public void stop() {
+        boolean resume = resumableAction();
         if (breaker != null) breaker.abort();
         if (targetPos != null) {
             SurvivalClaimManager.releaseResource(human, targetPos);
@@ -217,11 +264,15 @@ public final class SurvivalProgressionGoal extends Goal {
         }
         human.getNavigation().stop();
         breaker = null;
-        targetPos = null;
-        animal = null;
-        mode = null;
-        need = null;
-        controller.stop(SurvivalFailureReason.INTERRUPTED);
+        if (resume) {
+            // Claims are reacquired by the active tick after the preempting
+            // goal releases MOVE. The target itself remains available for the
+            // resumed path calculation.
+            controller.suspend();
+        } else {
+            clearAction();
+            controller.reset();
+        }
     }
 
     private void tickHunt() {
@@ -278,15 +329,36 @@ public final class SurvivalProgressionGoal extends Goal {
             nextDecisionTick = nextDecisionTick();
             return;
         }
+        trackResourceProgress();
         if (controller.snapshot().state() == SurvivalState.ACQUIRE) controller.acquired();
-        SurvivalClaimManager.claimResource(human, targetPos);
+        if (!SurvivalClaimManager.claimResource(human, targetPos)) {
+            abortAction();
+            controller.fail(SurvivalFailureReason.CLAIM_UNAVAILABLE, 10);
+            return;
+        }
+        if (!equipMiningTool()) {
+            abortAction();
+            controller.fail(SurvivalFailureReason.TOOL_UNAVAILABLE, 10);
+            return;
+        }
+        if (resourceNudgeTicks > 0 && !withinResourceMiningRange()) {
+            continueResourceNudge();
+            return;
+        }
+        resourceNudgeTarget = null;
+        resourceNudgeTicks = 0;
         if (!withinResourceMiningRange()) {
+            if (resourceNoProgressTicks >= RESOURCE_FORWARD_NUDGE_TICKS) {
+                boolean nudged = nudgeTowardLookDirection();
+                resourceNoProgressTicks = 0;
+                if (nudged) return;
+            }
             if (human.getNavigation().isDone()) {
                 if (++navigationStalledTicks >= RESOURCE_PATH_TIMEOUT_TICKS) {
                     failedResourceUntil.put(targetPos.immutable(), human.tickCount + 150);
                     abortAction(); return;
                 }
-                moveToTarget();
+                if (navigationStalledTicks == 1 || actionTicks % 10 == 0) moveToTarget();
             } else navigationStalledTicks = 0;
             return;
         }
@@ -317,10 +389,10 @@ public final class SurvivalProgressionGoal extends Goal {
         if (!ProgressiveBlockBreaker.withinReach(human, targetPos)) {
             return false;
         }
-        return LocalResourceScanner.interactionPosition(human, targetPos)
-                .map(interaction -> human.distanceToSqr(interaction.getX() + 0.5D,
-                        interaction.getY(), interaction.getZ() + 0.5D) <= RESOURCE_INTERACTION_TOLERANCE_SQR)
-                .orElse(true);
+        List<BlockPos> interactions = LocalResourceScanner.interactionPositions(human, targetPos);
+        return interactions.isEmpty() || interactions.stream().anyMatch(interaction ->
+                human.distanceToSqr(interaction.getX() + 0.5D,
+                        interaction.getY(), interaction.getZ() + 0.5D) <= RESOURCE_INTERACTION_TOLERANCE_SQR);
     }
 
     private void tickStation() {
@@ -333,16 +405,26 @@ public final class SurvivalProgressionGoal extends Goal {
             return;
         }
         controller.ensureActing();
-        SurvivalClaimManager.claimStation(human, targetPos);
-        if (human.distanceToSqr(targetPos.getX() + 0.5D, targetPos.getY() + 0.5D, targetPos.getZ() + 0.5D) > 25.0D) {
+        if (!SurvivalClaimManager.claimStation(human, targetPos)) {
+            abortAction();
+            controller.fail(SurvivalFailureReason.CLAIM_UNAVAILABLE, 20);
+            return;
+        }
+        if (!withinStationInteractionRange(targetPos)) {
+            stationInteractionCooldownTicks = FURNACE_INTERACTION_PACE_TICKS;
             if (human.getNavigation().isDone()) {
                 if (++navigationStalledTicks >= STATION_PATH_TIMEOUT_TICKS) { abortAction(); return; }
-                moveToTarget();
+                if (navigationStalledTicks == 1 || actionTicks % 10 == 0) moveToTarget();
             } else navigationStalledTicks = 0;
             return;
         }
         human.getNavigation().stop();
         controller.ensureActing();
+        lookAtStation();
+        if (stationInteractionCooldownTicks > 0) {
+            stationInteractionCooldownTicks--;
+            return;
+        }
         FurnaceOperation.Result result = FurnaceOperation.tick(human, targetPos);
         if (result == FurnaceOperation.Result.WAITING) {
             if (controller.snapshot().state() == SurvivalState.ACT) controller.waitForWorld();
@@ -370,23 +452,39 @@ public final class SurvivalProgressionGoal extends Goal {
             return;
         }
         controller.ensureActing();
-        SurvivalClaimManager.claimStation(human, targetPos);
-        if (human.distanceToSqr(targetPos.getX() + 0.5D, targetPos.getY() + 0.5D, targetPos.getZ() + 0.5D) > 25.0D) {
+        if (!SurvivalClaimManager.claimStation(human, targetPos)) {
+            abortAction();
+            controller.fail(SurvivalFailureReason.CLAIM_UNAVAILABLE, 20);
+            return;
+        }
+        if (!withinStationInteractionRange(targetPos)) {
+            stationInteractionCooldownTicks = STATION_ENTRY_DELAY_TICKS;
             if (human.getNavigation().isDone()) {
                 if (++navigationStalledTicks >= STATION_PATH_TIMEOUT_TICKS) { abortAction(); return; }
-                moveToTarget();
+                if (navigationStalledTicks == 1 || actionTicks % 10 == 0) moveToTarget();
             } else navigationStalledTicks = 0;
             return;
         }
         human.getNavigation().stop();
         controller.ensureActing();
-        tryImmediateCraft();
+        lookAtStation();
+        if (stationInteractionCooldownTicks > 0) {
+            stationInteractionCooldownTicks--;
+            return;
+        }
+        if (craftNeededGear()) {
+            // Keep the claim and the station look while the worker pauses
+            // between individual pieces of gear.
+            stationInteractionCooldownTicks = CRAFTING_PACE_TICKS;
+            return;
+        }
         SurvivalClaimManager.releaseStation(human, targetPos);
         targetPos = null;
         controller.completeTask();
     }
 
-    private boolean tryImmediateCraft() {
+    /** Performs only hand-crafting/bootstrap preparation during planning. */
+    private boolean prepareImmediateCraftingMaterials() {
         boolean changed = false;
         for (int craft = 0; craft < 6; craft++) {
             int planks = SurvivalInventory.count(human, stack -> stack.is(ItemTags.PLANKS));
@@ -402,13 +500,11 @@ public final class SurvivalProgressionGoal extends Goal {
                 step = sticks < sticksThreshold && canMakeSticks
                         && SurvivalRecipeService.craft(human, stack -> stack.is(Items.STICK), false).isPresent();
             }
-            boolean table = hasNearbyStation(Blocks.CRAFTING_TABLE);
-            boolean knownTable = table || findStation(Blocks.CRAFTING_TABLE).isPresent();
+            boolean knownTable = hasNearbyStation(Blocks.CRAFTING_TABLE)
+                    || findStation(Blocks.CRAFTING_TABLE).isPresent();
             if (!knownTable && SurvivalInventory.count(human, Items.CRAFTING_TABLE) == 0)
                 step |= SurvivalRecipeService.craft(human, stack -> stack.is(Items.CRAFTING_TABLE), false).isPresent();
             if (!knownTable && placeStation(Items.CRAFTING_TABLE, Blocks.CRAFTING_TABLE)) step = true;
-            table = hasNearbyStation(Blocks.CRAFTING_TABLE);
-            if (table) step |= craftNeededGear();
             if (!step) break;
             changed = true;
         }
@@ -647,18 +743,31 @@ public final class SurvivalProgressionGoal extends Goal {
                 .filter(human.level()::hasChunkAt)
                 .filter(pos -> human.level().getBlockState(pos).is(block))
                 .filter(pos -> !SurvivalClaimManager.stationClaimedByOther(human, pos))
-                .anyMatch(pos -> human.distanceToSqr(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D) <= 25.0D);
+                .anyMatch(this::withinStationInteractionRange);
     }
 
     private boolean stationReachable(BlockPos station) {
-        if (human.distanceToSqr(station.getX() + 0.5D, station.getY() + 0.5D, station.getZ() + 0.5D) <= 9.0D) {
-            return true;
-        }
-        return Direction.Plane.HORIZONTAL.stream()
-                .map(station::relative)
-                .filter(pos -> SurvivalQueryBudget.tryPath(human))
-                .map(pos -> human.getNavigation().createPath(pos, 0))
-                .anyMatch(path -> path != null && path.canReach());
+        if (withinStationInteractionRange(station)) return true;
+        return SurvivalPathing.createPath(human, stationInteractionPositions(station), 0).isPresent();
+    }
+
+    private boolean withinStationInteractionRange(BlockPos station) {
+        return stationInteractionPositions(station).stream().anyMatch(interaction ->
+                human.distanceToSqr(interaction.getX() + 0.5D, interaction.getY(), interaction.getZ() + 0.5D)
+                        <= RESOURCE_INTERACTION_TOLERANCE_SQR);
+    }
+
+    private List<BlockPos> stationInteractionPositions(BlockPos station) {
+        return BlockPos.betweenClosedStream(station.offset(-1, -1, -1), station.offset(1, 1, 1))
+                .filter(pos -> Math.abs(pos.getX() - station.getX()) + Math.abs(pos.getZ() - station.getZ()) == 1)
+                .filter(human.level()::hasChunkAt)
+                .filter(pos -> human.level().getBlockState(pos).getCollisionShape(human.level(), pos).isEmpty())
+                .filter(pos -> human.level().getBlockState(pos.above()).getCollisionShape(human.level(), pos.above()).isEmpty())
+                .filter(pos -> !human.level().getBlockState(pos.below())
+                        .getCollisionShape(human.level(), pos.below()).isEmpty())
+                .map(BlockPos::immutable)
+                .sorted(Comparator.comparingDouble(pos -> pos.distSqr(human.blockPosition())))
+                .toList();
     }
 
     private boolean placeStation(net.minecraft.world.item.Item item, net.minecraft.world.level.block.Block block) {
@@ -699,9 +808,16 @@ public final class SurvivalProgressionGoal extends Goal {
 
     private void moveToTarget() {
         if (targetPos == null) return;
-        BlockPos destination = mode == Mode.RESOURCE
-                ? LocalResourceScanner.interactionPosition(human, targetPos).orElse(targetPos) : targetPos;
-        human.getNavigation().moveTo(destination.getX() + 0.5D, destination.getY(), destination.getZ() + 0.5D, 0.8D);
+        if (mode == Mode.RESOURCE) {
+            List<BlockPos> interactions = LocalResourceScanner.interactionPositions(human, targetPos);
+            if (!interactions.isEmpty()) SurvivalPathing.moveTo(human, interactions, 0, 0.8D);
+            return;
+        }
+        if (mode == Mode.STATION || mode == Mode.CRAFTING) {
+            SurvivalPathing.moveTo(human, stationInteractionPositions(targetPos), 0, 0.8D);
+            return;
+        }
+        SurvivalPathing.moveTo(human, List.of(targetPos), 2, 0.8D);
     }
 
     private void moveToAnimal() {
@@ -716,7 +832,110 @@ public final class SurvivalProgressionGoal extends Goal {
         human.getNavigation().stop();
         targetPos = null;
         mode = null;
+        resetResourceProgress();
+        stationInteractionCooldownTicks = 0;
         nextDecisionTick = nextDecisionTick();
+    }
+
+    private boolean equipMiningTool() {
+        if (targetPos == null) return false;
+        return MiningToolSelector.select(human, human.level().getBlockState(targetPos))
+                .map(selected -> MiningToolSelector.equip(human, selected))
+                .orElse(false);
+    }
+
+    private void lookAtStation() {
+        if (targetPos == null) return;
+        human.getLookControl().setLookAt(targetPos.getX() + 0.5D, targetPos.getY() + 0.5D,
+                targetPos.getZ() + 0.5D, 30.0F, 30.0F);
+    }
+
+    private boolean hasNearbyUsefulLoot() {
+        AABB area = human.getBoundingBox().inflate(12.0D, 6.0D, 12.0D);
+        return human.level().getEntitiesOfClass(ItemEntity.class, area,
+                        item -> item.isAlive()
+                                && HumanLootPolicy.isUseful(human, item.getItem())
+                                && SurvivalInventory.canStore(human, item.getItem()))
+                .stream().findAny().isPresent();
+    }
+
+    private boolean resumableAction() {
+        SurvivalState state = controller.snapshot().state();
+        return mode != null && mode != Mode.EXPLORE
+                && (targetPos != null || animal != null)
+                && actionTicks < (mode == Mode.CRAFTING ? CRAFTING_ACTION_TIMEOUT_TICKS : 160)
+                && state != SurvivalState.DORMANT
+                && state != SurvivalState.BACKOFF
+                && state != SurvivalState.PLANNING;
+    }
+
+    private void clearAction() {
+        targetPos = null;
+        animal = null;
+        mode = null;
+        need = null;
+        resetResourceProgress();
+        stationInteractionCooldownTicks = 0;
+    }
+
+    private void resetResourceProgress() {
+        resourceProgressTarget = null;
+        lastResourcePosition = null;
+        resourceNoProgressTicks = 0;
+        resourceNudgeTarget = null;
+        resourceNudgeTicks = 0;
+    }
+
+    private void trackResourceProgress() {
+        if (targetPos == null || !targetPos.equals(resourceProgressTarget)) {
+            resourceProgressTarget = targetPos == null ? null : targetPos.immutable();
+            lastResourcePosition = human.position();
+            resourceNoProgressTicks = 0;
+            return;
+        }
+
+        Vec3 current = human.position();
+        if (lastResourcePosition == null
+                || current.distanceToSqr(lastResourcePosition) > RESOURCE_MOVEMENT_EPSILON_SQR) {
+            resourceNoProgressTicks = 0;
+        } else {
+            resourceNoProgressTicks++;
+        }
+        lastResourcePosition = current;
+    }
+
+    /** Gives a stalled resource action a bounded physics-safe advance before timeout recovery. */
+    private boolean nudgeTowardLookDirection() {
+        Vec3 look = human.getViewVector(1.0F);
+        double dx = look.x;
+        double dz = look.z;
+        double horizontalLengthSqr = dx * dx + dz * dz;
+        if (horizontalLengthSqr < 1.0E-4D && targetPos != null) {
+            dx = targetPos.getX() + 0.5D - human.getX();
+            dz = targetPos.getZ() + 0.5D - human.getZ();
+            horizontalLengthSqr = dx * dx + dz * dz;
+        }
+        if (horizontalLengthSqr < 1.0E-4D) return false;
+
+        double scale = RESOURCE_FORWARD_NUDGE_DISTANCE / Math.sqrt(horizontalLengthSqr);
+        resourceNudgeTarget = new Vec3(
+                human.getX() + dx * scale,
+                human.getY(),
+                human.getZ() + dz * scale);
+        resourceNudgeTicks = RESOURCE_FORWARD_NUDGE_DURATION_TICKS;
+        continueResourceNudge();
+        return true;
+    }
+
+    private void continueResourceNudge() {
+        if (resourceNudgeTarget == null || resourceNudgeTicks <= 0) return;
+        human.getNavigation().stop();
+        human.getMoveControl().setWantedPosition(
+                resourceNudgeTarget.x,
+                resourceNudgeTarget.y,
+                resourceNudgeTarget.z,
+                RESOURCE_FORWARD_NUDGE_SPEED);
+        resourceNudgeTicks--;
     }
 
     private int nextDecisionTick() {

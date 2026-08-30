@@ -110,6 +110,13 @@ public final class SurvivalStateMachine {
         transition(SurvivalState.DORMANT);
     }
 
+    public void reset() {
+        state = SurvivalState.DORMANT;
+        intent = null;
+        failureReason = null;
+        retryAtTick = 0L;
+    }
+
     private void require(SurvivalState expected) {
         if (state != expected) throw new IllegalStateException("Expected " + expected + " but was " + state);
     }

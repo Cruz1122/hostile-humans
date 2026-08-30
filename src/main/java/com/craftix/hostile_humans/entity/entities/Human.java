@@ -499,7 +499,10 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         goalSelector.addGoal(6, new SquadInvestigateGoal(this, 1.0D));
         goalSelector.addGoal(1, new PotionRangedAttackGoal(this, 1.0, 10, 10));
         goalSelector.addGoal(3, new RaiseShieldGoal(this));
-        goalSelector.addGoal(-1, new ItemLootGoal(this, 1.0D));
+        // Loot is useful fallback work, not a reason to preempt an active
+        // survival action. Survival yields explicitly after a completed mine
+        // while PLANNING so this lower-priority goal can collect the drop.
+        goalSelector.addGoal(6, new ItemLootGoal(this, 1.0D));
         survivalProgressionGoal = new SurvivalProgressionGoal(this);
         goalSelector.addGoal(5, survivalProgressionGoal);
         goalSelector.addGoal(7, new ChestLootGoal(this, 0.8D));

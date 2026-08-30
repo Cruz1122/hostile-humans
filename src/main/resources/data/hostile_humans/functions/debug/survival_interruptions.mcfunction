@@ -5,7 +5,6 @@ kill @e[tag=hh_survival_integrated]
 kill @e[tag=hh_survival_early]
 kill @e[tag=hh_survival_iron]
 kill @e[tag=hh_survival_food]
-kill @e[tag=hh_survival_ranged]
 kill @e[tag=hh_survival_gapple]
 gamerule doMobSpawning false
 gamerule mobGriefing true

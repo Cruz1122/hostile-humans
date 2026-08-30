@@ -5,7 +5,6 @@ kill @e[tag=hh_survival_integrated]
 kill @e[tag=hh_survival_early]
 kill @e[tag=hh_survival_iron]
 kill @e[tag=hh_survival_food]
-kill @e[tag=hh_survival_ranged]
 kill @e[tag=hh_survival_gapple]
 gamerule doMobSpawning false
 gamerule mobGriefing true
@@ -38,9 +37,8 @@ setblock ~-27 ~1 ~12 minecraft:coal_ore
 setblock ~-23 ~1 ~12 minecraft:iron_ore
 setblock ~-20 ~1 ~15 minecraft:iron_ore
 setblock ~-18 ~1 ~18 minecraft:iron_ore
-# South-east ranged/gold opportunity.
+# South-east gold opportunity.
 fill ~16 ~ ~9 ~30 ~2 ~19 minecraft:stone
-setblock ~19 ~1 ~12 minecraft:gravel
 setblock ~23 ~1 ~15 minecraft:gold_ore
 setblock ~27 ~1 ~17 minecraft:gold_ore
 
@@ -48,7 +46,7 @@ setblock ~27 ~1 ~17 minecraft:gold_ore
 fill ~-4 ~ ~-4 ~4 ~ ~4 minecraft:oak_planks
 setblock ~-1 ~1 ~ minecraft:crafting_table
 setblock ~1 ~1 ~ minecraft:furnace
-setblock ~ ~1 ~2 minecraft:chest{Items:[{Slot:0b,id:"minecraft:string",Count:12b},{Slot:1b,id:"minecraft:flint",Count:8b},{Slot:2b,id:"minecraft:apple",Count:4b}]}
+setblock ~ ~1 ~2 minecraft:chest{Items:[{Slot:0b,id:"minecraft:apple",Count:4b},{Slot:1b,id:"minecraft:cooked_beef",Count:4b}]}
 
 # Materials are intentionally concentrated. Nearby members must transfer physically.
 summon hostile_humans:human_tier1 ~-6 ~ ~-2 {PersonaId:"amilcar",SquadId:[I;1819044972,1819044972,1819044972,1819044972],PersistenceRequired:1b,HandItems:[{id:"minecraft:stone_pickaxe",Count:1b},{}],Inventory:[{Slot:20b,id:"minecraft:oak_planks",Count:24b},{Slot:21b,id:"minecraft:stick",Count:12b}],Tags:["hh_survival_integrated","hh_lab_squad","hh_lab_wood_rich"]}
@@ -57,7 +55,7 @@ summon hostile_humans:human_tier1 ~3 ~ ~-5 {PersonaId:"carola",SquadId:[I;181904
 summon hostile_humans:human_tier1 ~6 ~ ~-2 {PersonaId:"arigameplays",SquadId:[I;1819044972,1819044972,1819044972,1819044972],PersistenceRequired:1b,HandItems:[{},{}],ArmorItems:[{},{},{},{}],Tags:["hh_survival_integrated","hh_lab_squad","hh_lab_receiver"]}
 
 summon minecraft:text_display ~-24 ~7 ~-14 {text:'{"text":"WOOD OPPORTUNITY","color":"green","bold":true}',billboard:"center",background:1073741824,Tags:["hh_survival_integrated"]}
-summon minecraft:text_display ~24 ~7 ~-13 {text:'{"text":"FOOD + FEATHERS","color":"yellow","bold":true}',billboard:"center",background:1073741824,Tags:["hh_survival_integrated"]}
+summon minecraft:text_display ~24 ~7 ~-13 {text:'{"text":"FOOD","color":"yellow","bold":true}',billboard:"center",background:1073741824,Tags:["hh_survival_integrated"]}
 summon minecraft:text_display ~-23 ~7 ~15 {text:'{"text":"CLAIMED ORES","color":"gray","bold":true}',billboard:"center",background:1073741824,Tags:["hh_survival_integrated"]}
 summon minecraft:text_display ~ ~7 ~ {text:'{"text":"SHARED WORKSHOP","color":"aqua","bold":true}',billboard:"center",background:1073741824,Tags:["hh_survival_integrated"]}
 effect give @e[tag=hh_lab_squad] minecraft:glowing 1800 0 true

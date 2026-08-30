@@ -889,7 +889,9 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
                 && (getData().getHandItems().stream().anyMatch(stack -> !stack.isEmpty())
                 || getData().getArmorItems().stream().anyMatch(stack -> !stack.isEmpty())
                 || getData().getInventoryItems().stream().anyMatch(stack -> !stack.isEmpty()));
-        if (!hasConfiguredItems) generateInventory(this, false);
+        if (!hasConfiguredItems && !getTags().contains(SurvivalProgressionGoal.DEBUG_TAG)) {
+            generateInventory(this, false);
+        }
         equipmentDirty = true;
     }
 
@@ -1268,6 +1270,9 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         if (this.equipmentReevaluationQueued) {
             this.equipmentReevaluationQueued = false;
             this.reevaluateEquipment();
+        }
+        if (!this.level().isClientSide && this.survivalProgressionGoal != null) {
+            this.survivalProgressionGoal.publishDebugState();
         }
         if (this.miningToolLockTicks > 0) this.miningToolLockTicks--;
         sanityClearPendingDrinkItem();

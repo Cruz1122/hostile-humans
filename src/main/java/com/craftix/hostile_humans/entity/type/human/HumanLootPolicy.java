@@ -33,8 +33,7 @@ public final class HumanLootPolicy {
         if (stack.is(ItemTags.LOGS) || stack.is(ItemTags.PLANKS) || stack.is(Items.STICK)
                 || stack.is(Items.COAL) || stack.is(Items.CHARCOAL) || stack.is(Items.RAW_IRON)
                 || stack.is(Items.RAW_GOLD) || stack.is(Items.IRON_INGOT) || stack.is(Items.GOLD_INGOT)
-                || stack.is(Items.DIAMOND) || stack.is(Items.STRING) || stack.is(Items.FEATHER)
-                || stack.is(Items.FLINT) || stack.is(Items.APPLE) || stack.is(Items.COBBLESTONE)
+                || stack.is(Items.DIAMOND) || stack.is(Items.APPLE) || stack.is(Items.COBBLESTONE)
                 || stack.is(Items.COBBLED_DEEPSLATE)) return true;
         if (stack.getItem() instanceof BlockItem) {
             return stack.is(TacticalTags.PILLAR_BLOCKS) || stack.is(TacticalTags.BRIDGE_BLOCKS);

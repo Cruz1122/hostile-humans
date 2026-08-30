@@ -13,6 +13,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.common.ForgeMod;
 
 import java.util.List;
 
@@ -43,9 +45,27 @@ public final class ProgressiveBlockBreaker {
         this.requireCorrectTool = requireCorrectTool;
     }
 
+    /** Uses the human's eye position and configured reach, like block interaction does. */
+    public static boolean withinReach(Human human, BlockPos block) {
+        return withinReachFrom(human, human.getEyePosition(), block);
+    }
+
+    /** Checks reach from a hypothetical standing cell without requiring an entity teleport. */
+    public static boolean withinReachFrom(Human human, BlockPos feetPosition, BlockPos block) {
+        Vec3 eye = new Vec3(feetPosition.getX() + 0.5D,
+                feetPosition.getY() + human.getEyeHeight(), feetPosition.getZ() + 0.5D);
+        return withinReachFrom(human, eye, block);
+    }
+
+    private static boolean withinReachFrom(Human human, Vec3 eye, BlockPos block) {
+        var reachAttribute = human.getAttribute(ForgeMod.ENTITY_REACH.get());
+        double reach = reachAttribute == null ? 3.0D : Math.max(0.0D, reachAttribute.getValue());
+        return eye.distanceToSqr(Vec3.atCenterOf(block)) <= reach * reach;
+    }
+
     public WorldActionResult tick() {
         if (!WorldActionSupport.permitted(human) || requiresIdle && human.getTarget() != null
-                || human.distanceToSqr(pos.getX() + 0.5D, pos.getY() + 0.5D, pos.getZ() + 0.5D) > 9.0D
+                || !withinReach(human, pos)
                 || !human.level().getBlockState(pos).equals(expected)) return abort();
         var selected = MiningToolSelector.select(human, expected);
         if (selected.isEmpty() || !MiningToolSelector.equip(human, selected.get())) return abort();

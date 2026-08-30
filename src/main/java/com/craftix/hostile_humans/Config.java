@@ -136,20 +136,20 @@ public class Config {
         bridgePlacementCooldownTicks = SERVER_BUILDER.defineInRange("bridgePlacementCooldownTicks", 8, 1, 40);
         allowBridgeOverLava = SERVER_BUILDER.define("allowBridgeOverLava", false);
         allowMiningWithoutCorrectTool = SERVER_BUILDER.define("allowMiningWithoutCorrectTool", false);
-        miningSpeedMultiplier = SERVER_BUILDER.defineInRange("miningSpeedMultiplier", 1.0D, 0.1D, 5.0D);
+        miningSpeedMultiplier = SERVER_BUILDER.defineInRange("miningSpeedMultiplier", 4.0D, 0.1D, 5.0D);
         SERVER_BUILDER.pop();
 
         SERVER_BUILDER.push("survivalProgression");
         enableSurvivalProgression = SERVER_BUILDER.comment("Allow needs-driven squad survival progression")
                 .define("enableSurvivalProgression", true);
         resourceScanRadius = SERVER_BUILDER.comment("Maximum local radius for loaded resource searches")
-                .defineInRange("resourceScanRadius", 12, 4, 24);
+                .defineInRange("resourceScanRadius", 32, 4, 64);
         allowHiddenOreMining = SERVER_BUILDER.comment("Allow survival progression to target loaded ores through solid blocks")
                 .define("allowHiddenOreMining", true);
         needsEvaluationIntervalTicks = SERVER_BUILDER.comment("Ticks between squad-needs evaluations")
                 .defineInRange("needsEvaluationIntervalTicks", 60, 40, 200);
         explorationRadius = SERVER_BUILDER.comment("Maximum radius for local progression exploration")
-                .defineInRange("explorationRadius", 48, 12, 96);
+                .defineInRange("explorationRadius", 64, 12, 128);
         survivalPathBudgetPerTick = SERVER_BUILDER.comment("Maximum survival path requests per dimension and tick")
                 .defineInRange("survivalPathBudgetPerTick", 100, 10, 1000);
         survivalScanBudgetPerTick = SERVER_BUILDER.comment("Maximum full survival resource scans per dimension and tick")

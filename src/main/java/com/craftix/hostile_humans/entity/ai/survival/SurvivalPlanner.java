@@ -12,7 +12,6 @@ public final class SurvivalPlanner {
             case FUEL -> SurvivalObjective.FUEL_RESERVE;
             case IRON -> SurvivalObjective.IRON_GEAR;
             case GOLD, DIAMOND -> SurvivalObjective.DIAMOND_GEAR;
-            case STRING, FEATHERS, FLINT -> SurvivalObjective.RANGED_SUPPORT;
         };
     }
 

@@ -8,8 +8,5 @@ public enum SquadNeed {
     IRON,
     GOLD,
     DIAMOND,
-    STRING,
-    FEATHERS,
-    FLINT,
     APPLES
 }

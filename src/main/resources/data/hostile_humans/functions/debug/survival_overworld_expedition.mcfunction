@@ -5,7 +5,6 @@ kill @e[tag=hh_survival_integrated]
 kill @e[tag=hh_survival_early]
 kill @e[tag=hh_survival_iron]
 kill @e[tag=hh_survival_food]
-kill @e[tag=hh_survival_ranged]
 kill @e[tag=hh_survival_gapple]
 gamerule doMobSpawning false
 gamerule mobGriefing true
@@ -48,7 +47,7 @@ setblock ~23 ~1 ~-12 minecraft:iron_ore
 setblock ~27 ~1 ~-16 minecraft:iron_ore
 setblock ~30 ~1 ~-10 minecraft:gold_ore
 
-# Animal meadow: chickens cover food plus feathers.
+# Animal meadow: livestock provides food.
 summon minecraft:cow ~-2 ~ ~-5 {PersistenceRequired:1b,Tags:["hh_survival_integrated","hh_surface_food"]}
 summon minecraft:cow ~3 ~ ~-8 {PersistenceRequired:1b,Tags:["hh_survival_integrated","hh_surface_food"]}
 summon minecraft:pig ~5 ~ ~-3 {PersistenceRequired:1b,Tags:["hh_survival_integrated","hh_surface_food"]}
@@ -67,7 +66,7 @@ fill ~-5 ~8 ~-4 ~5 ~8 ~4 minecraft:tinted_glass
 summon minecraft:text_display ~-25 ~8 ~-12 {text:'{"text":"WOOD + APPLES","color":"green","bold":true}',billboard:"center",background:1073741824,Tags:["hh_survival_integrated"]}
 summon minecraft:text_display ~-11 ~7 ~17 {text:'{"text":"STONE / COAL / IRON","color":"gray","bold":true}',billboard:"center",background:1073741824,Tags:["hh_survival_integrated"]}
 summon minecraft:text_display ~24 ~7 ~-13 {text:'{"text":"EXPLORATION RIDGE","color":"gold","bold":true}',billboard:"center",background:1073741824,Tags:["hh_survival_integrated"]}
-summon minecraft:text_display ~4 ~6 ~-9 {text:'{"text":"FOOD + FEATHERS","color":"yellow","bold":true}',billboard:"center",background:1073741824,Tags:["hh_survival_integrated"]}
+summon minecraft:text_display ~4 ~6 ~-9 {text:'{"text":"FOOD","color":"yellow","bold":true}',billboard:"center",background:1073741824,Tags:["hh_survival_integrated"]}
 effect give @e[tag=hh_surface_squad] minecraft:glowing 1800 0 true
 tp @s ~ ~9 ~
 gamemode spectator @s

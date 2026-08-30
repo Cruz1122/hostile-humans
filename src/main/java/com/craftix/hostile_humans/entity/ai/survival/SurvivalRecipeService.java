@@ -113,6 +113,12 @@ public final class SurvivalRecipeService {
         for (ItemStack stack : human.getData().getInventoryItems()) {
             for (int count = 0; count < stack.getCount(); count++) available.add(new Reserved(stack));
         }
+        for (net.minecraft.world.entity.EquipmentSlot slot : net.minecraft.world.entity.EquipmentSlot.values()) {
+            ItemStack equipped = human.getItemBySlot(slot);
+            if (!equipped.isEmpty()) {
+                for (int count = 0; count < equipped.getCount(); count++) available.add(new Reserved(equipped));
+            }
+        }
         List<Reserved> result = new ArrayList<>();
         boolean[] occupied = new boolean[available.size()];
         for (Ingredient ingredient : ingredients) {

@@ -41,11 +41,18 @@ public final class LocalResourceScanner {
                                                        Predicate<BlockPos> ignored, boolean validatePath) {
         if (needs.isEmpty()) return Optional.empty();
         if (!SurvivalQueryBudget.tryResourceScan(human)) return Optional.empty();
-        // Ore is the intentional high-value target. If stone/deepslate is
-        // packed around a visible ore, do not select the surrounding block
-        // merely because STONE appears earlier in the enum.
+        // Wood/stone must be completed before chasing ore. Keep the
+        // vanilla priority WOOD -> STONE -> FUEL -> IRON for early game.
         List<SquadNeed> prioritizedNeeds = needs.stream()
-                .sorted(Comparator.comparingInt(need -> isOreNeed(need) ? 0 : 1))
+                .sorted(Comparator.comparingInt(need -> switch (need) {
+                    case WOOD -> 0;
+                    case STONE -> 1;
+                    case FUEL -> 2;
+                    case IRON -> 3;
+                    case GOLD -> 4;
+                    case DIAMOND -> 5;
+                    default -> 6;
+                }))
                 .toList();
         int radius = Config.resourceScanRadius.get();
         BlockPos origin = human.blockPosition();
@@ -103,7 +110,7 @@ public final class LocalResourceScanner {
     }
 
     public static boolean withinGatherRange(Human human, BlockPos resource) {
-        return human.distanceToSqr(resource.getX() + 0.5D, resource.getY() + 0.5D, resource.getZ() + 0.5D) <= 9.0D;
+        return ProgressiveBlockBreaker.withinReach(human, resource);
     }
 
     private static boolean reachable(Human human, BlockPos interaction) {
@@ -113,14 +120,30 @@ public final class LocalResourceScanner {
     }
 
     public static Optional<BlockPos> interactionPosition(Human human, BlockPos resource) {
-        return java.util.Arrays.stream(Direction.values())
-                .filter(direction -> direction.getAxis().isHorizontal())
-                .map(resource::relative)
+        BlockPos origin = human.blockPosition();
+        return BlockPos.betweenClosedStream(resource.offset(-2, -2, -2), resource.offset(2, 3, 2))
                 .filter(human.level()::hasChunkAt)
                 .filter(pos -> human.level().getBlockState(pos).getCollisionShape(human.level(), pos).isEmpty())
                 .filter(pos -> human.level().getBlockState(pos.above()).getCollisionShape(human.level(), pos.above()).isEmpty())
-                .filter(pos -> human.level().getBlockState(pos.below()).isSolidRender(human.level(), pos.below()))
-                .findFirst();
+                // A mining target can be elevated, but the human still needs
+                // a real supporting block below its feet. Do not select an
+                // empty cell above the resource or a floating air cell just
+                // because it is close to the current position.
+                .filter(pos -> pos.getY() <= resource.getY())
+                .filter(pos -> !human.level().getBlockState(pos.below())
+                        .getCollisionShape(human.level(), pos.below()).isEmpty())
+                // Elevated resources can still be approached from a lower
+                // supported cell; pathfinding validates the complete route.
+                .filter(pos -> ProgressiveBlockBreaker.withinReachFrom(human, pos, resource))
+                .map(BlockPos::immutable)
+                // The mining cell must be selected by its distance to the
+                // resource first. Choosing only by distance to the human can
+                // leave the human two blocks away from a same-level block,
+                // even when an adjacent cell is available.
+                .min(Comparator
+                        .comparingDouble((BlockPos pos) -> resource.distToCenterSqr(
+                                pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D))
+                        .thenComparingDouble(pos -> pos.distSqr(origin)));
     }
 
     public static boolean matches(BlockState state, SquadNeed need) {
@@ -133,7 +156,6 @@ public final class LocalResourceScanner {
             case IRON -> state.is(BlockTags.IRON_ORES);
             case GOLD -> state.is(BlockTags.GOLD_ORES);
             case DIAMOND -> state.is(BlockTags.DIAMOND_ORES);
-            case FLINT -> state.is(Blocks.GRAVEL);
             default -> false;
         };
     }

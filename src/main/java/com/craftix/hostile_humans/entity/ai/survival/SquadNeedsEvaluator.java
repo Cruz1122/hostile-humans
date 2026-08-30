@@ -1,13 +1,11 @@
 package com.craftix.hostile_humans.entity.ai.survival;
 
 import com.craftix.hostile_humans.Config;
-import com.craftix.hostile_humans.HumanUtil;
 import com.craftix.hostile_humans.entity.entities.Human;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.AxeItem;
-import net.minecraft.world.item.BowItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.PickaxeItem;
@@ -22,8 +20,6 @@ import java.util.UUID;
 
 public final class SquadNeedsEvaluator {
     private static final int FOOD_PER_MEMBER = 8;
-    private static final int ARROWS_PER_BOW = 24;
-    private static final int WOOD_UNITS_PER_MEMBER = 12;
     private static final int STONE_PER_BASIC_TOOL = 3;
     private static final Map<Key, Cached> CACHE = new HashMap<>();
 
@@ -51,12 +47,12 @@ public final class SquadNeedsEvaluator {
         int rawFood = sum(members, stack -> isRawFood(stack) ? stack.getCount() : 0);
         put(deficits, SquadNeed.FOOD, members.size() * FOOD_PER_MEMBER - food - Math.min(rawFood, members.size() * FOOD_PER_MEMBER));
 
-        int wood = sum(members, stack -> stack.is(ItemTags.LOGS) ? stack.getCount() * 4
-                : stack.is(ItemTags.PLANKS) || stack.is(Items.STICK) ? stack.getCount() : 0);
-        // Wood is a bootstrap dependency for the first pickaxe only. Once a
-        // pickaxe exists, stone becomes the next actionable mining target.
-        boolean missingBasicTool = members.stream().anyMatch(member -> !hasTool(member, PickaxeItem.class));
-        put(deficits, SquadNeed.WOOD, Math.max(missingBasicTool ? 4 : 0, members.size() * WOOD_UNITS_PER_MEMBER - wood));
+        // Wood is not a permanent reserve. Before the first pickaxe, require
+        // enough convertible material for its three planks and two sticks.
+        // Afterwards, request wood only when the next missing tool tier cannot
+        // be crafted from the member's current stick/plank/log supply.
+        int woodDeficit = members.stream().mapToInt(SquadNeedsEvaluator::toolWoodDeficit).sum();
+        put(deficits, SquadNeed.WOOD, woodDeficit);
 
         int rawOre = sum(members, stack -> stack.is(Items.RAW_IRON) || stack.is(Items.RAW_GOLD) ? stack.getCount() : 0);
         int fuel = sum(members, stack -> stack.is(Items.COAL) || stack.is(Items.CHARCOAL) ? stack.getCount() : 0);
@@ -116,25 +112,42 @@ public final class SquadNeedsEvaluator {
 
         int apples = count(members, Items.APPLE);
         int gapples = count(members, Items.GOLDEN_APPLE);
-        if (gapples < members.size()) {
+        boolean hasBasicGear = members.stream().anyMatch(member -> hasStoneTool(member, PickaxeItem.class)
+                && SurvivalInventory.contains(member, stack -> stack.getItem() instanceof SwordItem));
+        if (gapples < members.size() && hasBasicGear) {
             put(deficits, SquadNeed.APPLES, members.size() - gapples - apples);
             put(deficits, SquadNeed.GOLD, Math.max(0, members.size() - gapples - count(members, Items.GOLD_INGOT) / 8));
         }
 
-        int missingBows = (int) members.stream().filter(member -> !SurvivalInventory.contains(member, HumanUtil::isRangedWeapon)).count();
-        put(deficits, SquadNeed.STRING, Math.max(0, missingBows * 3 - count(members, Items.STRING)));
-        int bowUsers = (int) members.stream().filter(member -> SurvivalInventory.contains(member, stack -> stack.getItem() instanceof BowItem)).count();
-        int arrows = count(members, Items.ARROW);
-        int arrowDeficit = bowUsers * ARROWS_PER_BOW - arrows;
-        if (arrowDeficit > 0) {
-            put(deficits, SquadNeed.FEATHERS, Math.max(0, (arrowDeficit + 3) / 4 - count(members, Items.FEATHER)));
-            put(deficits, SquadNeed.FLINT, Math.max(0, (arrowDeficit + 3) / 4 - count(members, Items.FLINT)));
-        }
         return new SquadNeeds(deficits);
     }
 
     private static boolean hasTool(Human member, Class<?> type) {
         return SurvivalInventory.contains(member, stack -> type.isInstance(stack.getItem()));
+    }
+
+    private static int toolWoodDeficit(Human member) {
+        int planks = SurvivalInventory.count(member, stack -> stack.is(ItemTags.PLANKS))
+                + SurvivalInventory.count(member, stack -> stack.is(ItemTags.LOGS)) * 4;
+        int sticks = SurvivalInventory.count(member, Items.STICK);
+        if (!hasTool(member, PickaxeItem.class)) {
+            int plankDeficit = Math.max(0, 3 - planks);
+            int sticksAfterReservingPickPlanks = sticks + Math.max(0, planks - 3) / 2 * 4;
+            return plankDeficit + Math.max(0, 2 - sticksAfterReservingPickPlanks);
+        }
+        return Math.max(0, nextToolStickDemand(member) - (sticks + planks / 2 * 4));
+    }
+
+    private static int nextToolStickDemand(Human member) {
+        int stoneDemand = (!hasStoneTool(member, PickaxeItem.class) ? 2 : 0)
+                + (!hasStoneTool(member, AxeItem.class) ? 2 : 0)
+                + (!hasStoneTool(member, SwordItem.class) ? 1 : 0);
+        if (stoneDemand > 0) return stoneDemand;
+        if (!hasIronTool(member, PickaxeItem.class)) return 2;
+        if (!hasShield(member)) return 0;
+        return (!hasDiamondTool(member, PickaxeItem.class) ? 2 : 0)
+                + (!hasDiamondTool(member, AxeItem.class) ? 2 : 0)
+                + (!hasDiamondTool(member, SwordItem.class) ? 1 : 0);
     }
 
     private static boolean hasStoneTool(Human member, Class<?> type) {

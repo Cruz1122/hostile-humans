@@ -8,6 +8,5 @@ public enum SurvivalObjective {
     FUEL_RESERVE,
     IRON_GEAR,
     DIAMOND_GEAR,
-    RANGED_SUPPORT,
     EXPLORATION
 }

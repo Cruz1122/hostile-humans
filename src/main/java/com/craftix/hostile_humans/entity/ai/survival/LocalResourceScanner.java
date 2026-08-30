@@ -135,6 +135,10 @@ public final class LocalResourceScanner {
                 // Elevated resources can still be approached from a lower
                 // supported cell; pathfinding validates the complete route.
                 .filter(pos -> ProgressiveBlockBreaker.withinReachFrom(human, pos, resource))
+                // A farther empty cell is valid for elevated blocks, but it
+                // must have a clear view. Otherwise a solid block can hide the
+                // resource and large ore veins select an inaccessible inner block.
+                .filter(pos -> ProgressiveBlockBreaker.hasLineOfSightFrom(human, pos, resource))
                 .map(BlockPos::immutable)
                 // The mining cell must be selected by its distance to the
                 // resource first. Choosing only by distance to the human can

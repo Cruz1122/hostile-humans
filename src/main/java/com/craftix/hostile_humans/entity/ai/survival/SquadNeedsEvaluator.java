@@ -49,8 +49,8 @@ public final class SquadNeedsEvaluator {
 
         // Wood is not a permanent reserve. Before the first pickaxe, require
         // enough convertible material for its three planks and two sticks.
-        // Afterwards, request wood only when the next missing tool tier cannot
-        // be crafted from the member's current stick/plank/log supply.
+        // Afterwards, request wood for the next missing tool tier or for the
+        // six planks needed by the mandatory shield.
         int woodDeficit = members.stream().mapToInt(SquadNeedsEvaluator::toolWoodDeficit).sum();
         put(deficits, SquadNeed.WOOD, woodDeficit);
 
@@ -98,8 +98,11 @@ public final class SquadNeedsEvaluator {
             put(deficits, SquadNeed.FUEL, Math.max(0, 2 - fuel));
         }
 
-        boolean canMineDiamond = members.stream().anyMatch(member -> hasIronTool(member, PickaxeItem.class)
-                && hasShield(member));
+        // A shield is a combat prerequisite, not a mining prerequisite. An
+        // iron pickaxe is already sufficient to harvest diamond ore, so do
+        // not hide the diamond need while the human is still obtaining its
+        // defensive gear.
+        boolean canMineDiamond = members.stream().anyMatch(member -> hasIronTool(member, PickaxeItem.class));
         if (canMineDiamond) {
             int diamondToolsMissing = 0;
             for (Human member : members) {
@@ -135,7 +138,10 @@ public final class SquadNeedsEvaluator {
             int sticksAfterReservingPickPlanks = sticks + Math.max(0, planks - 3) / 2 * 4;
             return plankDeficit + Math.max(0, 2 - sticksAfterReservingPickPlanks);
         }
-        return Math.max(0, nextToolStickDemand(member) - (sticks + planks / 2 * 4));
+        int shieldWoodDeficit = !hasShield(member) && hasIronTool(member, PickaxeItem.class)
+                ? Math.max(0, 6 - planks) : 0;
+        int toolWoodDeficit = Math.max(0, nextToolStickDemand(member) - (sticks + planks / 2 * 4));
+        return Math.max(shieldWoodDeficit, toolWoodDeficit);
     }
 
     private static int nextToolStickDemand(Human member) {

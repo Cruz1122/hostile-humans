@@ -286,6 +286,37 @@ public final class HumanSurvivalProgressionGameTest {
         cleanup(human); helper.succeed();
     }
 
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    public static void largeDiamondVeinSkipsInaccessibleInnerBlocks(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        for (int x = 4; x <= 6; x++) {
+            for (int y = 1; y <= 3; y++) {
+                for (int z = 1; z <= 4; z++) {
+                    helper.setBlock(new BlockPos(x, y, z), Blocks.STONE.defaultBlockState());
+                }
+            }
+        }
+        List<BlockPos> innerVein = List.of(
+                new BlockPos(5, 1, 2), new BlockPos(5, 1, 3), new BlockPos(5, 2, 2));
+        innerVein.forEach(pos -> helper.setBlock(pos, Blocks.DIAMOND_ORE.defaultBlockState()));
+        BlockPos surfaceRelative = new BlockPos(5, 1, 4);
+        helper.setBlock(surfaceRelative, Blocks.DIAMOND_ORE.defaultBlockState());
+        helper.setBlock(new BlockPos(5, 2, 4), Blocks.AIR.defaultBlockState());
+        helper.setBlock(new BlockPos(5, 0, 5), Blocks.STONE.defaultBlockState());
+        BlockPos surface = helper.absolutePos(surfaceRelative);
+
+        helper.assertTrue(LocalResourceScanner.interactionPosition(human, helper.absolutePos(innerVein.get(0))).isEmpty(),
+                "Inner diamond block incorrectly received a non-adjacent interaction cell");
+        var surfaceInteraction = LocalResourceScanner.interactionPosition(human, surface);
+        helper.assertTrue(surfaceInteraction.isPresent(),
+                "Surface diamond did not receive an interaction cell: " + surfaceInteraction);
+        var selected = LocalResourceScanner.findReachableFirst(human, List.of(SquadNeed.DIAMOND), pos -> false);
+        helper.assertTrue(selected.map(LocalResourceScanner.ResourceTarget::pos).filter(surface::equals).isPresent(),
+                "Large diamond vein did not select its reachable surface block: " + selected);
+        cleanup(human); helper.succeed();
+    }
+
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 80)
     public static void elevatedResourceUsesEyeReachFromGround(GameTestHelper helper) {
         Human human = human(helper, new BlockPos(2, 1, 2));
@@ -311,6 +342,87 @@ public final class HumanSurvivalProgressionGameTest {
         new ProgressiveBlockBreaker(human, ore).tick();
         helper.assertTrue(helper.getLevel().getBlockState(ore).is(Blocks.DIAMOND_ORE), "Insufficient pick broke diamond ore");
         cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 80)
+    public static void ironPickaxeUnlocksDiamondMiningWithoutShield(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        human.getData().setInventoryItem(20, new ItemStack(Items.STONE_PICKAXE));
+        human.getData().setInventoryItem(21, new ItemStack(Items.STONE_AXE));
+        human.getData().setInventoryItem(22, new ItemStack(Items.STONE_SWORD));
+        human.getData().setInventoryItem(23, new ItemStack(Items.COOKED_BEEF, 8));
+        human.getData().setInventoryItem(24, new ItemStack(Items.GOLDEN_APPLE));
+        human.getData().setInventoryItem(25, new ItemStack(Items.COAL, 2));
+        BlockPos ore = helper.absolutePos(new BlockPos(3, 1, 2));
+        helper.setBlock(new BlockPos(3, 1, 2), Blocks.DIAMOND_ORE.defaultBlockState());
+
+        SquadNeeds needs = SquadNeedsEvaluator.calculate(List.of(human));
+        helper.assertTrue(needs.needs(SquadNeed.DIAMOND),
+                "An iron pickaxe did not unlock the diamond need without a shield: " + needs.deficits());
+        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
+        helper.assertTrue(goal.canUse(), "Diamond ore was not selected with an iron pickaxe");
+        goal.start();
+        for (int tick = 0; tick < 40 && helper.getLevel().getBlockState(ore).is(Blocks.DIAMOND_ORE); tick++) {
+            goal.tick();
+        }
+        helper.assertTrue(helper.getLevel().getBlockState(ore).isAir(),
+                "Human with an iron pickaxe never mined the diamond ore");
+        goal.stop(); cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    public static void diamondMaterialsCraftToolsAndArmorWithoutShield(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        human.getData().setInventoryItem(20, new ItemStack(Items.DIAMOND, 33));
+        human.getData().setInventoryItem(21, new ItemStack(Items.STICK, 5));
+        helper.setBlock(new BlockPos(3, 1, 2), Blocks.CRAFTING_TABLE.defaultBlockState());
+
+        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
+        for (int attempt = 0; attempt < 4; attempt++) {
+            goal.canUse();
+            human.tickCount += 10;
+        }
+
+        helper.assertTrue(SurvivalInventory.contains(human, stack -> stack.is(Items.DIAMOND_PICKAXE))
+                        && SurvivalInventory.contains(human, stack -> stack.is(Items.DIAMOND_AXE))
+                        && SurvivalInventory.contains(human, stack -> stack.is(Items.DIAMOND_SWORD)),
+                "Diamond materials did not produce all diamond tools: " + human.getData().getInventoryItems());
+        helper.assertTrue(SurvivalInventory.contains(human, stack -> stack.is(Items.DIAMOND_HELMET))
+                        && SurvivalInventory.contains(human, stack -> stack.is(Items.DIAMOND_CHESTPLATE))
+                        && SurvivalInventory.contains(human, stack -> stack.is(Items.DIAMOND_LEGGINGS))
+                        && SurvivalInventory.contains(human, stack -> stack.is(Items.DIAMOND_BOOTS)),
+                "Diamond materials did not produce full diamond armor: " + human.getData().getInventoryItems());
+        helper.assertTrue(!SurvivalInventory.contains(human, stack -> stack.is(Items.SHIELD)),
+                "The regression fixture unexpectedly supplied a shield");
+        goal.stop(); cleanup(human); helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)
+    public static void missingShieldRequestsWoodBeforeDiamondMining(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_PICKAXE));
+        human.getData().setInventoryItem(20, new ItemStack(Items.STONE_PICKAXE));
+        human.getData().setInventoryItem(21, new ItemStack(Items.STONE_AXE));
+        human.getData().setInventoryItem(22, new ItemStack(Items.STONE_SWORD));
+        human.getData().setInventoryItem(23, new ItemStack(Items.COOKED_BEEF, 8));
+        human.getData().setInventoryItem(24, new ItemStack(Items.GOLDEN_APPLE));
+        human.getData().setInventoryItem(25, new ItemStack(Items.COAL, 2));
+        BlockPos log = helper.absolutePos(new BlockPos(3, 1, 2));
+        helper.setBlock(new BlockPos(3, 1, 2), Blocks.OAK_LOG.defaultBlockState());
+
+        SquadNeeds needs = SquadNeedsEvaluator.calculate(List.of(human));
+        helper.assertTrue(needs.needs(SquadNeed.WOOD) && needs.needs(SquadNeed.IRON),
+                "Missing shield did not request both wood and iron: " + needs.deficits());
+        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
+        helper.assertTrue(goal.canUse(), "Human did not select wood needed for the shield");
+        helper.assertTrue(goal.snapshot().intent() != null
+                        && goal.snapshot().intent().objective() == com.craftix.hostile_humans.entity.ai.survival.SurvivalObjective.WOOD_BOOTSTRAP,
+                "Human selected a later objective instead of gathering shield wood: " + goal.snapshot());
+        helper.assertTrue(LocalResourceScanner.find(human, SquadNeed.WOOD).filter(log::equals).isPresent(),
+                "Shield wood was not exposed as an actionable resource");
+        goal.stop(); cleanup(human); helper.succeed();
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalProgression", timeoutTicks = 40)

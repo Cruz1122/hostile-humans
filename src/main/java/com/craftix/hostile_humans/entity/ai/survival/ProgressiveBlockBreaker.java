@@ -10,6 +10,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -55,6 +56,14 @@ public final class ProgressiveBlockBreaker {
         Vec3 eye = new Vec3(feetPosition.getX() + 0.5D,
                 feetPosition.getY() + human.getEyeHeight(), feetPosition.getZ() + 0.5D);
         return withinReachFrom(human, eye, block);
+    }
+
+    /** Checks that a hypothetical standing cell has an unobstructed view of the block. */
+    public static boolean hasLineOfSightFrom(Human human, BlockPos feetPosition, BlockPos block) {
+        Vec3 eye = new Vec3(feetPosition.getX() + 0.5D,
+                feetPosition.getY() + human.getEyeHeight(), feetPosition.getZ() + 0.5D);
+        return human.level().clip(new ClipContext(eye, Vec3.atCenterOf(block),
+                ClipContext.Block.OUTLINE, ClipContext.Fluid.NONE, human)).getBlockPos().equals(block);
     }
 
     private static boolean withinReachFrom(Human human, Vec3 eye, BlockPos block) {

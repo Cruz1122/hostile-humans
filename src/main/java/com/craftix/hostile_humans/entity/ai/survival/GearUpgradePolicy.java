@@ -20,7 +20,7 @@ public final class GearUpgradePolicy {
         if (candidate.getItem() instanceof AxeItem) return score(candidate) > bestInventoryScore(human, stack -> stack.getItem() instanceof AxeItem);
         if (candidate.getItem() instanceof ArmorItem armor) {
             EquipmentSlot slot = armor.getEquipmentSlot();
-            return score(candidate) > score(human.getItemBySlot(slot));
+            return score(candidate) > bestArmorScore(human, slot);
         }
         return false;
     }
@@ -42,6 +42,18 @@ public final class GearUpgradePolicy {
         int best = type.test(human.getMainHandItem()) ? score(human.getMainHandItem()) : -1;
         if (human.getData() != null) {
             for (ItemStack stack : human.getData().getInventoryItems()) if (type.test(stack)) best = Math.max(best, score(stack));
+        }
+        return best;
+    }
+
+    private static int bestArmorScore(Human human, EquipmentSlot slot) {
+        int best = score(human.getItemBySlot(slot));
+        if (human.getData() != null) {
+            for (ItemStack stack : human.getData().getInventoryItems()) {
+                if (stack.getItem() instanceof ArmorItem armor && armor.getEquipmentSlot() == slot) {
+                    best = Math.max(best, score(stack));
+                }
+            }
         }
         return best;
     }

@@ -458,19 +458,21 @@ public final class SurvivalProgressionGoal extends Goal {
                 && stack.getItem() instanceof net.minecraft.world.item.TieredItem owned
                 && owned.getTier().getLevel() >= level) > 0 ? level : -1;
         if (type == PickaxeItem.class) {
-            if (level >= 3) return hasIronPickAndShield();
-            if (level == 2) return hasStoneUsefulTools();
-            return level == 0 && current < 0 || level == 1 && current < 1 || level == 2 && current < 2;
+            if (level >= 3) return hasIronPick() && current < level;
+            if (level == 2) return hasStoneUsefulTools() && current < level;
+            return current < level;
         }
         if (level <= 1) return current < level;
-        return level >= 3 && hasIronPickAndShield();
+        return level >= 3 && hasIronPick() && current < level;
     }
 
-    private boolean hasIronPickAndShield() {
+    private boolean hasIronPick() {
+        // Diamond gear only needs the iron pick that harvested its materials.
+        // The shield remains a separate combat progression need and must not
+        // block crafting tools or armor once diamonds are available.
         return SurvivalInventory.contains(human, stack -> stack.getItem() instanceof PickaxeItem
                         && stack.getItem() instanceof net.minecraft.world.item.TieredItem tiered
-                        && tiered.getTier().getLevel() >= 2)
-                && SurvivalInventory.contains(human, stack -> stack.is(Items.SHIELD));
+                        && tiered.getTier().getLevel() >= 2);
     }
 
     private boolean hasStoneUsefulTools() {
@@ -487,7 +489,7 @@ public final class SurvivalProgressionGoal extends Goal {
 
     private boolean allowedArmorUpgrade(ItemStack candidate) {
         if (!(candidate.getItem() instanceof net.minecraft.world.item.ArmorItem armor)) return false;
-        if (armor.getMaterial() == net.minecraft.world.item.ArmorMaterials.DIAMOND) return hasIronPickAndShield();
+        if (armor.getMaterial() == net.minecraft.world.item.ArmorMaterials.DIAMOND) return hasIronPick();
         return armor.getMaterial() == net.minecraft.world.item.ArmorMaterials.IRON;
     }
 

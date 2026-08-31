@@ -47,6 +47,7 @@ public final class WorldGearProgressionTracker {
         if (event.getEntity() instanceof ServerPlayer player) {
             WorldGearProgressionSavedData data = WorldGearProgressionSavedData.get(player.serverLevel());
             WorldGearProgressionSavedData.unlockForDimension(data, event.getTo());
+            if (event.getTo() == Level.END) data.markEndVisited();
             observePlayer(player);
         }
     }
@@ -64,6 +65,7 @@ public final class WorldGearProgressionTracker {
         if (player instanceof FakePlayer) return;
         WorldGearProgressionSavedData data = WorldGearProgressionSavedData.get(player.serverLevel());
         WorldGearProgressionSavedData.unlockForDimension(data, player.level().dimension());
+        if (player.level().dimension() == Level.END) data.markEndVisited();
         Inventory inventory = player.getInventory();
         for (ItemStack stack : inventory.items) observe(data, stack);
         for (ItemStack stack : inventory.armor) observe(data, stack);

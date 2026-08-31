@@ -42,7 +42,8 @@ public class BowAttack<T extends HumanEntity & RangedAttackMob> extends Goal {
             return false;
         if (mob instanceof Human human && human.isSleepingOrLyingDown())
             return false;
-        return this.mob.getTarget() != null && this.isHoldingBow();
+        return this.mob.getTarget() != null && this.isHoldingBow()
+                && (!(mob instanceof Human human) || human.hasProjectileForWeapon(mob.getMainHandItem()));
     }
 
     protected boolean isHoldingBow() {
@@ -54,7 +55,8 @@ public class BowAttack<T extends HumanEntity & RangedAttackMob> extends Goal {
             return false;
         if (mob instanceof Human human && human.isSleepingOrLyingDown())
             return false;
-        return (this.canUse() || !this.mob.getNavigation().isDone()) && this.isHoldingBow();
+        return (this.canUse() || !this.mob.getNavigation().isDone()) && this.isHoldingBow()
+                && (!(mob instanceof Human human) || human.hasProjectileForWeapon(mob.getMainHandItem()));
     }
 
     public void start() {

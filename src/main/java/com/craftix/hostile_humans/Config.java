@@ -74,6 +74,35 @@ public class Config {
     public static ForgeConfigSpec.IntValue nearbyHumanCapPerPlayer;
     public static ForgeConfigSpec.IntValue dimensionHumanCap;
     public static ForgeConfigSpec.DoubleValue legendSpawnWeight;
+    public static ForgeConfigSpec.IntValue loadoutAgeCapTicks;
+    public static ForgeConfigSpec.DoubleValue loadoutOverworldNetheriteChance;
+    public static ForgeConfigSpec.DoubleValue loadoutNetherNetheriteChance;
+    public static ForgeConfigSpec.DoubleValue loadoutEndNetheriteChance;
+    public static ForgeConfigSpec.DoubleValue loadoutPostEndOverworldNetheriteChance;
+    public static ForgeConfigSpec.DoubleValue loadoutPostEndNetherNetheriteChance;
+    public static ForgeConfigSpec.DoubleValue loadoutOverworldNetheriteCap;
+    public static ForgeConfigSpec.DoubleValue loadoutNetherNetheriteCap;
+    public static ForgeConfigSpec.DoubleValue loadoutEndNetheriteCap;
+    public static ForgeConfigSpec.DoubleValue loadoutDiamondOverworldChance;
+    public static ForgeConfigSpec.DoubleValue loadoutDiamondNetherChance;
+    public static ForgeConfigSpec.DoubleValue loadoutDiamondEndChance;
+    public static ForgeConfigSpec.DoubleValue loadoutPostEndDiamondBoost;
+    public static ForgeConfigSpec.DoubleValue loadoutPearlEndChance;
+    public static ForgeConfigSpec.DoubleValue loadoutPostEndPearlBoost;
+    public static ForgeConfigSpec.DoubleValue loadoutTotemEndChance;
+    public static ForgeConfigSpec.DoubleValue loadoutPostEndTotemBoost;
+    public static ForgeConfigSpec.DoubleValue loadoutShieldOverworldChance;
+    public static ForgeConfigSpec.DoubleValue loadoutShieldNetherChance;
+    public static ForgeConfigSpec.DoubleValue loadoutShieldEndChance;
+    public static ForgeConfigSpec.DoubleValue loadoutEnchantChanceT1;
+    public static ForgeConfigSpec.DoubleValue loadoutEnchantChanceT2;
+    public static ForgeConfigSpec.DoubleValue loadoutEnchantChanceT3;
+    public static ForgeConfigSpec.DoubleValue loadoutEnchantChanceT4;
+    public static ForgeConfigSpec.DoubleValue loadoutEnchantChanceT5;
+    public static ForgeConfigSpec.DoubleValue loadoutEnchantLevel2Chance;
+    public static ForgeConfigSpec.DoubleValue loadoutEnchantLevel3Chance;
+    public static ForgeConfigSpec.DoubleValue loadoutEnchantLevel4Chance;
+    public static ForgeConfigSpec.DoubleValue loadoutEnchantLevel5Chance;
 
     static {
         BUILDER.push("Hostile Humans Settings");
@@ -178,6 +207,67 @@ public class Config {
                 .defineInRange("dimensionHumanCap", 40, 1, 256);
         legendSpawnWeight = SERVER_BUILDER.comment("Fraction of natural encounters assigned to Minecraft Legends")
                 .defineInRange("legendSpawnWeight", 0.02D, 0.0D, 1.0D);
+        SERVER_BUILDER.pop();
+
+        SERVER_BUILDER.push("naturalLoadouts");
+        loadoutAgeCapTicks = SERVER_BUILDER.comment("Game ticks at which natural loadout age scaling reaches its cap")
+                .defineInRange("ageCapTicks", 5_184_000, 24_000, Integer.MAX_VALUE);
+        loadoutOverworldNetheriteChance = SERVER_BUILDER.comment("Base Netherite quality chance in the Overworld after Netherite is unlocked")
+                .defineInRange("overworldNetheriteChance", 0.04D, 0.0D, 1.0D);
+        loadoutNetherNetheriteChance = SERVER_BUILDER.comment("Base Netherite quality chance in Nether wilds after Netherite is unlocked")
+                .defineInRange("netherNetheriteChance", 0.25D, 0.0D, 1.0D);
+        loadoutEndNetheriteChance = SERVER_BUILDER.comment("Base Netherite quality chance in the End after Netherite is unlocked")
+                .defineInRange("endNetheriteChance", 0.82D, 0.0D, 1.0D);
+        loadoutPostEndOverworldNetheriteChance = SERVER_BUILDER.comment("Effective Overworld Netherite chance after the End has been visited")
+                .defineInRange("postEndOverworldNetheriteChance", 0.48D, 0.0D, 1.0D);
+        loadoutPostEndNetherNetheriteChance = SERVER_BUILDER.comment("Effective Nether Netherite chance after the End has been visited")
+                .defineInRange("postEndNetherNetheriteChance", 0.62D, 0.0D, 1.0D);
+        loadoutOverworldNetheriteCap = SERVER_BUILDER.comment("Absolute Overworld cap for Netherite quality")
+                .defineInRange("overworldNetheriteCap", 0.28D, 0.0D, 1.0D);
+        loadoutNetherNetheriteCap = SERVER_BUILDER.comment("Absolute Nether cap for Netherite quality")
+                .defineInRange("netherNetheriteCap", 0.70D, 0.0D, 1.0D);
+        loadoutEndNetheriteCap = SERVER_BUILDER.comment("Absolute End cap for Netherite quality")
+                .defineInRange("endNetheriteCap", 0.95D, 0.0D, 1.0D);
+        loadoutDiamondOverworldChance = SERVER_BUILDER.comment("Base Diamond quality chance in the Overworld after Diamond is unlocked")
+                .defineInRange("diamondOverworldChance", 0.16D, 0.0D, 1.0D);
+        loadoutDiamondNetherChance = SERVER_BUILDER.comment("Base Diamond quality chance in Nether contexts")
+                .defineInRange("diamondNetherChance", 0.78D, 0.0D, 1.0D);
+        loadoutDiamondEndChance = SERVER_BUILDER.comment("Base Diamond quality chance in End contexts")
+                .defineInRange("diamondEndChance", 0.98D, 0.0D, 1.0D);
+        loadoutPostEndDiamondBoost = SERVER_BUILDER.comment("Additional Diamond quality bias after the End has been visited")
+                .defineInRange("postEndDiamondBoost", 0.52D, 0.0D, 1.0D);
+        loadoutPearlEndChance = SERVER_BUILDER.comment("Ender Pearl chance in End contexts")
+                .defineInRange("pearlEndChance", 0.72D, 0.0D, 1.0D);
+        loadoutPostEndPearlBoost = SERVER_BUILDER.comment("Additional Ender Pearl chance after the End has been visited")
+                .defineInRange("postEndPearlBoost", 0.60D, 0.0D, 1.0D);
+        loadoutTotemEndChance = SERVER_BUILDER.comment("Totem chance in End contexts")
+                .defineInRange("totemEndChance", 0.65D, 0.0D, 1.0D);
+        loadoutPostEndTotemBoost = SERVER_BUILDER.comment("Additional Totem chance after the End has been visited")
+                .defineInRange("postEndTotemBoost", 0.40D, 0.0D, 1.0D);
+        loadoutShieldOverworldChance = SERVER_BUILDER.comment("Base shield chance in the Overworld")
+                .defineInRange("shieldOverworldChance", 0.68D, 0.0D, 1.0D);
+        loadoutShieldNetherChance = SERVER_BUILDER.comment("Base shield chance in Nether contexts")
+                .defineInRange("shieldNetherChance", 0.84D, 0.0D, 1.0D);
+        loadoutShieldEndChance = SERVER_BUILDER.comment("Base shield chance in End contexts")
+                .defineInRange("shieldEndChance", 0.88D, 0.0D, 1.0D);
+        loadoutEnchantChanceT1 = SERVER_BUILDER.comment("Chance that each eligible T1 equipment item receives an enchantment")
+                .defineInRange("enchantChanceT1", 0.82D, 0.0D, 1.0D);
+        loadoutEnchantChanceT2 = SERVER_BUILDER.comment("Chance that each eligible T2 equipment item receives an enchantment")
+                .defineInRange("enchantChanceT2", 0.74D, 0.0D, 1.0D);
+        loadoutEnchantChanceT3 = SERVER_BUILDER.comment("Chance that each eligible T3 equipment item receives an enchantment")
+                .defineInRange("enchantChanceT3", 0.64D, 0.0D, 1.0D);
+        loadoutEnchantChanceT4 = SERVER_BUILDER.comment("Chance that each eligible T4 equipment item receives an enchantment")
+                .defineInRange("enchantChanceT4", 0.54D, 0.0D, 1.0D);
+        loadoutEnchantChanceT5 = SERVER_BUILDER.comment("Chance that each eligible T5 equipment item receives an enchantment")
+                .defineInRange("enchantChanceT5", 0.44D, 0.0D, 1.0D);
+        loadoutEnchantLevel2Chance = SERVER_BUILDER.comment("Relative chance of retaining enchantment level II or higher")
+                .defineInRange("enchantLevel2Chance", 0.62D, 0.0D, 1.0D);
+        loadoutEnchantLevel3Chance = SERVER_BUILDER.comment("Relative chance of retaining enchantment level III or higher")
+                .defineInRange("enchantLevel3Chance", 0.34D, 0.0D, 1.0D);
+        loadoutEnchantLevel4Chance = SERVER_BUILDER.comment("Relative chance of retaining enchantment level IV or higher")
+                .defineInRange("enchantLevel4Chance", 0.16D, 0.0D, 1.0D);
+        loadoutEnchantLevel5Chance = SERVER_BUILDER.comment("Relative chance of retaining enchantment level V")
+                .defineInRange("enchantLevel5Chance", 0.06D, 0.0D, 1.0D);
         SERVER_BUILDER.pop();
 
         BUILDER.pop();

@@ -24,6 +24,19 @@ public class HumanEntityWalkControl extends MoveControl {
         this.human = (Human) mob;
     }
 
+    /** Clears a one-shot movement request before another goal can own movement. */
+    public void stopMovement() {
+        this.operation = MoveControl.Operation.WAIT;
+        this.wantedX = this.mob.getX();
+        this.wantedY = this.mob.getY();
+        this.wantedZ = this.mob.getZ();
+        this.speedModifier = 0.0D;
+        this.strafeForwards = 0.0F;
+        this.strafeRight = 0.0F;
+        this.mob.setZza(0.0F);
+        this.mob.setXxa(0.0F);
+    }
+
     @Override
     public void tick() {
         if (!this.mob.level().isClientSide) prepareCombatMovement();

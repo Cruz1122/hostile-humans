@@ -1103,6 +1103,47 @@ public final class HumanSurvivalProgressionGameTest {
         });
     }
 
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalNavigation", timeoutTicks = 100)
+    public static void resourceNudgeDoesNotLeakIntoCombatMovement(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        expandGround(helper);
+        prepareDiamondNavigator(human);
+        helper.setBlock(new BlockPos(2, 1, 5), Blocks.DIAMOND_ORE.defaultBlockState());
+        human.goalSelector.removeAllGoals(ignored -> true);
+        human.targetSelector.removeAllGoals(ignored -> true);
+        human.setYRot(0.0F);
+        human.setXRot(0.0F);
+
+        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
+        helper.assertTrue(goal.canUse(), "Diamond gathering action was not selected for movement ownership regression");
+        goal.start();
+        human.setNoAi(true);
+        for (int tick = 0; tick < 25; tick++) {
+            human.getNavigation().stop();
+            goal.tick();
+        }
+
+        Vec3 beforeCombat = human.position();
+        var target = EntityType.COW.create(helper.getLevel());
+        helper.assertTrue(target != null, "Combat target could not be created");
+        target.moveTo(human.getX(), human.getY(), human.getZ() + 8.0D, 180.0F, 0.0F);
+        target.setNoAi(true);
+        helper.getLevel().addFreshEntity(target);
+        human.setTarget(target);
+        human.setNoAi(false);
+
+        helper.startSequence().thenExecute(() -> {
+            human.getMoveControl().tick();
+            helper.assertTrue(human.position().distanceToSqr(beforeCombat) < 0.0001D,
+                    "Resource nudge movement leaked after combat preemption: before="
+                            + beforeCombat + ", after=" + human.position());
+            goal.stop();
+            target.discard();
+            cleanup(human);
+            helper.succeed();
+        });
+    }
+
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalNavigation", timeoutTicks = 80)
     public static void resourceNavigationEquipsRequiredToolBeforeArrival(GameTestHelper helper) {
         Human human = human(helper, new BlockPos(2, 1, 2));

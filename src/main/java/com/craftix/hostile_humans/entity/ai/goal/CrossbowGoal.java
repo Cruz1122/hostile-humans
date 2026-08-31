@@ -39,7 +39,8 @@ public class CrossbowGoal<T extends HumanEntity & RangedAttackMob & CrossbowAtta
             return false;
         if (mob instanceof Human human && human.isSleepingOrLyingDown())
             return false;
-        return this.isValidTarget() && this.isHoldingCrossbow();
+        return this.isValidTarget() && this.isHoldingCrossbow()
+                && (!(mob instanceof Human human) || human.hasProjectileForWeapon(mob.getMainHandItem()));
     }
 
     private boolean isHoldingCrossbow() {
@@ -51,7 +52,8 @@ public class CrossbowGoal<T extends HumanEntity & RangedAttackMob & CrossbowAtta
             return false;
         if (mob instanceof Human human && human.isSleepingOrLyingDown())
             return false;
-        return this.isValidTarget() && (this.canUse() || !this.mob.getNavigation().isDone()) && this.isHoldingCrossbow();
+        return this.isValidTarget() && (this.canUse() || !this.mob.getNavigation().isDone()) && this.isHoldingCrossbow()
+                && (!(mob instanceof Human human) || human.hasProjectileForWeapon(mob.getMainHandItem()));
     }
 
     private boolean isValidTarget() {
@@ -171,4 +173,3 @@ public class CrossbowGoal<T extends HumanEntity & RangedAttackMob & CrossbowAtta
         READY_TO_ATTACK
     }
 }
-

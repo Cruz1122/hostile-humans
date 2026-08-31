@@ -19,6 +19,8 @@ import com.craftix.hostile_humans.entity.ai.survival.SurvivalClaimManager;
 import com.craftix.hostile_humans.entity.ai.survival.SurvivalProgressionGoal;
 import com.craftix.hostile_humans.entity.ai.survival.SurvivalSnapshot;
 import com.craftix.hostile_humans.entity.equipment.MeleeWeaponSelector;
+import com.craftix.hostile_humans.entity.loadout.HumanLoadoutGenerator;
+import com.craftix.hostile_humans.progression.WorldGearProgressionSnapshot;
 import com.craftix.hostile_humans.persona.ActivePersonaSavedData;
 import com.craftix.hostile_humans.persona.PersonaDefinition;
 import com.craftix.hostile_humans.persona.PersonaRegistry;
@@ -98,6 +100,7 @@ import static com.craftix.hostile_humans.entity.entities.HumanInventoryGenerator
 import static com.craftix.hostile_humans.entity.entities.ModEntityType.ROAMER;
 
 import com.craftix.hostile_humans.entity.spawner.SpawnContext;
+import com.craftix.hostile_humans.entity.spawner.SpawnContextClassifier;
 
 public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttackMob, PotionRangedAttackMob {
 
@@ -159,6 +162,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     @Nullable
     private UUID squadId;
     private SpawnContext spawnContext = SpawnContext.UNKNOWN;
+    private boolean naturalSpawnLoadout;
     @Nullable
     private UUID squadTargetUuid;
     @Nullable
@@ -452,7 +456,9 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             }
         }
 
-        if (amount > 1) {
+        // Showcase Humans are intentionally invulnerable. Do not let the
+        // generic damage hook still consume armor from their loadout.
+        if (amount > 1 && !isInvulnerable()) {
             var slots = EquipmentSlot.values();
             for (EquipmentSlot equipmentslot : slots) {
                 if (equipmentslot.getType() == EquipmentSlot.Type.ARMOR) {
@@ -636,6 +642,11 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     @Override
     @Nullable
     public SpawnGroupData finalizeSpawn(ServerLevelAccessor serverLevelAccessor, DifficultyInstance difficulty, MobSpawnType mobSpawnType, @Nullable SpawnGroupData spawnGroupData, @Nullable CompoundTag compoundTag) {
+        if (mobSpawnType == MobSpawnType.NATURAL && this.spawnContext == SpawnContext.UNKNOWN
+                && serverLevelAccessor instanceof ServerLevel serverLevel) {
+            this.spawnContext = SpawnContextClassifier.classify(serverLevel, blockPosition());
+        }
+        this.naturalSpawnLoadout = mobSpawnType == MobSpawnType.NATURAL;
         spawnGroupData = super.finalizeSpawn(serverLevelAccessor, difficulty, mobSpawnType, spawnGroupData, compoundTag);
 
         List<String> variants = new ArrayList<>(TEXTURE_BY_VARIANT.keySet());
@@ -725,6 +736,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     @Override
     public void addAdditionalSaveData(CompoundTag compound) {
         super.addAdditionalSaveData(compound);
+        compound.putBoolean("ProceduralNaturalLoadout", this.naturalSpawnLoadout);
         compound.putInt("InvestigateSoundX", this.investigateSound.getX());
         compound.putInt("InvestigateSoundY", this.investigateSound.getY());
         compound.putInt("InvestigateSoundZ", this.investigateSound.getZ());
@@ -745,6 +757,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     public void readAdditionalSaveData(CompoundTag compound) {
         String previouslyAssignedPersona = getPersonaId();
         super.readAdditionalSaveData(compound);
+        this.naturalSpawnLoadout = compound.getBoolean("ProceduralNaturalLoadout");
         if (!previouslyAssignedPersona.isEmpty() && !previouslyAssignedPersona.equals(getPersonaId())
                 && this.level() instanceof ServerLevel serverLevel) {
             ActivePersonaSavedData.get(serverLevel).release(previouslyAssignedPersona, getUUID());
@@ -819,6 +832,12 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
         if (livingEntity != null && previousTarget == null) {
             cobwebsPlacedThisCombat = 0;
+            if (!this.level().isClientSide && this.survivalProgressionGoal != null) {
+                // Target acquisition can happen after survival's tick but
+                // before MoveControl runs. Stop its direct resource nudge
+                // immediately instead of waiting for GoalSelector.stop().
+                this.survivalProgressionGoal.interruptForCombat();
+            }
         }
 
         if (this.level().isClientSide) {
@@ -911,10 +930,26 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
                 && (getData().getHandItems().stream().anyMatch(stack -> !stack.isEmpty())
                 || getData().getArmorItems().stream().anyMatch(stack -> !stack.isEmpty())
                 || getData().getInventoryItems().stream().anyMatch(stack -> !stack.isEmpty()));
-        if (!hasConfiguredItems && !getTags().contains(SurvivalProgressionGoal.DEBUG_TAG)) {
+        if (naturalSpawnLoadout) {
+            if (!hasConfiguredItems) HumanLoadoutGenerator.generateAndApply((ServerLevel) level(), this);
+        } else if (!hasConfiguredItems && !getTags().contains(SurvivalProgressionGoal.DEBUG_TAG)) {
             generateInventory(this, false);
         }
         equipmentDirty = true;
+    }
+
+    /** Controlled debug entry point; normal summons keep the legacy generator. */
+    public void initializeProceduralLoadoutForDebug() {
+        initializeProceduralLoadoutForDebug(WorldGearProgressionSnapshot.from(
+                com.craftix.hostile_humans.progression.WorldGearProgressionSavedData.get((ServerLevel) level())),
+                ((ServerLevel) level()).getServer().overworld().getGameTime());
+    }
+
+    public void initializeProceduralLoadoutForDebug(WorldGearProgressionSnapshot progression, long serverAgeTicks) {
+        super.finalizeSpawn();
+        setCanPickUpLoot(true);
+        this.naturalSpawnLoadout = true;
+        HumanLoadoutGenerator.generateAndApply((ServerLevel) level(), this, progression, serverAgeTicks);
     }
 
     @Override
@@ -1934,7 +1969,32 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     @Override
     public ItemStack getProjectile(ItemStack p_21272_) {
-        return new ItemStack(Items.ARROW);
+        if (!naturalSpawnLoadout) return new ItemStack(Items.ARROW);
+        if (getData() != null) {
+            for (int slot = 0; slot < getData().getInventoryItemsSize(); slot++) {
+                ItemStack stored = getData().getInventoryItem(slot);
+                if (stored.getItem() instanceof ArrowItem) {
+                    ItemStack projectile = stored.copyWithCount(1);
+                    stored.shrink(1);
+                    getData().setInventoryItem(slot, stored);
+                    markEquipmentDirty();
+                    return projectile;
+                }
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
+    /** Natural ranged equipment must have real compatible ammunition in the durable inventory. */
+    public boolean hasProjectileForWeapon(ItemStack weapon) {
+        if (weapon.getItem() instanceof CrossbowItem && CrossbowItem.isCharged(weapon)) return true;
+        if (!(weapon.getItem() instanceof BowItem) && !(weapon.getItem() instanceof CrossbowItem)) return false;
+        if (!naturalSpawnLoadout) return true;
+        if (getData() == null) return false;
+        for (ItemStack stored : getData().getInventoryItems()) {
+            if (stored.getItem() instanceof ArrowItem && stored.getCount() > 0) return true;
+        }
+        return false;
     }
 
     @Override
@@ -1954,6 +2014,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         }
         this.shieldCoolDown = 8;
         ItemStack weaponStack = getItemInHand(ProjectileUtil.getWeaponHoldingHand(this, this::canFireProjectileWeapon));
+        if (naturalSpawnLoadout && !hasProjectileForWeapon(weaponStack)) return;
         if (weaponStack.getItem() instanceof CrossbowItem) {
             this.performCrossbowAttack(this, 1.6F);
         } else {

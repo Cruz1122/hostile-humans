@@ -14,11 +14,13 @@ public final class WorldGearProgressionSavedData extends SavedData {
     private static final String GOLD = "GoldUnlocked";
     private static final String DIAMOND = "DiamondUnlocked";
     private static final String NETHERITE = "NetheriteUnlocked";
+    private static final String END_VISITED = "EndVisited";
 
     private boolean ironUnlocked;
     private boolean goldUnlocked;
     private boolean diamondUnlocked;
     private boolean netheriteUnlocked;
+    private boolean endVisited;
 
     public static WorldGearProgressionSavedData get(ServerLevel level) {
         MinecraftServer server = level.getServer();
@@ -43,6 +45,17 @@ public final class WorldGearProgressionSavedData extends SavedData {
 
     public boolean isNetheriteUnlocked() {
         return netheriteUnlocked;
+    }
+
+    public boolean hasVisitedEnd() {
+        return endVisited;
+    }
+
+    public void markEndVisited() {
+        if (!endVisited) {
+            endVisited = true;
+            setDirty();
+        }
     }
 
     public void unlockIron() {
@@ -90,6 +103,7 @@ public final class WorldGearProgressionSavedData extends SavedData {
         data.goldUnlocked = root.getBoolean(GOLD);
         data.diamondUnlocked = root.getBoolean(DIAMOND);
         data.netheriteUnlocked = root.getBoolean(NETHERITE);
+        data.endVisited = root.getBoolean(END_VISITED);
         return data;
     }
 
@@ -99,6 +113,7 @@ public final class WorldGearProgressionSavedData extends SavedData {
         root.putBoolean(GOLD, goldUnlocked);
         root.putBoolean(DIAMOND, diamondUnlocked);
         root.putBoolean(NETHERITE, netheriteUnlocked);
+        root.putBoolean(END_VISITED, endVisited);
         return root;
     }
 }

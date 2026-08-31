@@ -85,4 +85,22 @@ public final class WorldProgressionGameTest {
                 "Serialization invented progression flags");
         helper.succeed();
     }
+
+    @GameTest(template = "human_smoke", templateNamespace = "hostile_humans", batch = "worldProgression", timeoutTicks = 40)
+    public static void endVisitIsSeparateFromNetheriteUnlock(GameTestHelper helper) {
+        WorldGearProgressionSavedData data = new WorldGearProgressionSavedData();
+        data.markEndVisited();
+        helper.assertTrue(data.hasVisitedEnd(), "End visit milestone was not recorded");
+        helper.assertTrue(!data.isNetheriteUnlocked(), "End visit bypassed Netherite unlock");
+        helper.succeed();
+    }
+
+    @GameTest(template = "human_smoke", templateNamespace = "hostile_humans", batch = "worldProgression", timeoutTicks = 40)
+    public static void endVisitPersists(GameTestHelper helper) {
+        WorldGearProgressionSavedData data = new WorldGearProgressionSavedData();
+        data.markEndVisited();
+        WorldGearProgressionSavedData restored = WorldGearProgressionSavedData.load(data.save(new CompoundTag()));
+        helper.assertTrue(restored.hasVisitedEnd(), "End visit milestone did not survive serialization");
+        helper.succeed();
+    }
 }

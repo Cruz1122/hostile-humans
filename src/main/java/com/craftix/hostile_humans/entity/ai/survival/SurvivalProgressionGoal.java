@@ -5,6 +5,7 @@ import com.craftix.hostile_humans.HostileHumans;
 import com.craftix.hostile_humans.entity.ai.action.MiningToolSelector;
 import com.craftix.hostile_humans.entity.ai.action.WorldActionResult;
 import com.craftix.hostile_humans.entity.ai.action.WorldActionSupport;
+import com.craftix.hostile_humans.entity.ai.control.HumanEntityWalkControl;
 import com.craftix.hostile_humans.entity.ai.squad.SquadManager;
 import com.craftix.hostile_humans.entity.entities.Human;
 import com.craftix.hostile_humans.entity.type.human.HumanLootPolicy;
@@ -194,6 +195,7 @@ public final class SurvivalProgressionGoal extends Goal {
             return activeActionEligible() && actionTicks < 160
                     && (animal != null || controller.snapshot().state() == SurvivalState.PLANNING);
         }
+        if (combatMovementActive()) return false;
         // A successful mine leaves a real drop beside the human. Yield the
         // MOVE flag while the action is in PLANNING so the registered loot
         // goal (priority 6) can collect it before survival picks a new target
@@ -243,6 +245,11 @@ public final class SurvivalProgressionGoal extends Goal {
             return;
         }
         if (mode == null) return;
+        if (combatMovementActive()) {
+            clearOwnedMovementRequest();
+            controller.suspend();
+            return;
+        }
         if (mode == Mode.EXPLORE ? !eligible() : !activeActionEligible()) {
             controller.suspend();
             return;
@@ -273,7 +280,7 @@ public final class SurvivalProgressionGoal extends Goal {
             SurvivalClaimManager.releaseResource(human, targetPos);
             SurvivalClaimManager.releaseStation(human, targetPos);
         }
-        human.getNavigation().stop();
+        clearOwnedMovementRequest();
         breaker = null;
         if (resume) {
             // Claims are reacquired by the active tick after the preempting
@@ -284,6 +291,13 @@ public final class SurvivalProgressionGoal extends Goal {
             clearAction();
             controller.reset();
         }
+    }
+
+    /** Called by Human.setTarget before the next goal-selector pass. */
+    public void interruptForCombat() {
+        if (mode == null) return;
+        clearOwnedMovementRequest();
+        controller.suspend();
     }
 
     private void tickHunt() {
@@ -914,7 +928,7 @@ public final class SurvivalProgressionGoal extends Goal {
             SurvivalClaimManager.releaseResource(human, targetPos);
             SurvivalClaimManager.releaseStation(human, targetPos);
         }
-        human.getNavigation().stop();
+        clearOwnedMovementRequest();
         targetPos = null;
         mode = null;
         resetResourceProgress();
@@ -969,6 +983,22 @@ public final class SurvivalProgressionGoal extends Goal {
         resourceNoProgressTicks = 0;
         resourceNudgeTarget = null;
         resourceNudgeTicks = 0;
+    }
+
+    private void clearOwnedMovementRequest() {
+        human.getNavigation().stop();
+        if (human.getMoveControl() instanceof HumanEntityWalkControl moveControl) {
+            // A resource nudge is issued directly to MoveControl. Clear that
+            // one-shot request before another goal can own movement.
+            moveControl.stopMovement();
+        }
+        resourceNudgeTarget = null;
+        resourceNudgeTicks = 0;
+    }
+
+    private boolean combatMovementActive() {
+        return human.getTarget() != null || human.isFleeing || human.toAvoid != null
+                || human.healingAfterFleeTicks > 0 || human.isUnderMeleePressure();
     }
 
     private void trackResourceProgress() {

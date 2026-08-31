@@ -85,7 +85,7 @@ git diff --check
 
 - Compilación y procesamiento de recursos han pasado.
 - `git diff --check` ha pasado.
-- La suite GameTest completa ejecuta 119 pruebas requeridas en un servidor Forge dedicado. La validación debe repetirse después de cambios transversales; avisos de mods opcionales y errores de POI de fixtures no pertenecen al contrato de supervivencia.
+- El código fuente actual contiene 143 declaraciones `@GameTest` en 10 clases; el conteo efectivo debe ser el número esperado no-cero que imprime Forge en cada ejecución del servidor dedicado. La validación debe repetirse después de cambios transversales; avisos de mods opcionales y errores de POI de fixtures no pertenecen al contrato de supervivencia.
 - El cliente carga y el mundo abre. En logs aparecen problemas ajenos a esta feature: `libflite.so` ausente, tags con referencias vanilla inexistentes y loot tables que requieren Farmer's Delight no instalado.
 - Los escenarios manuales se ejecutan con `/function hostile_humans:debug/<nombre>`.
 

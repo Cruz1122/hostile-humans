@@ -4,11 +4,16 @@ import com.craftix.hostile_humans.entity.data.HumanData;
 import com.craftix.hostile_humans.entity.entities.Human;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.AxeItem;
+import net.minecraft.world.item.PickaxeItem;
+import net.minecraft.world.item.SwordItem;
 import net.minecraft.world.level.ItemLike;
 
 import java.util.function.Predicate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public final class SurvivalInventory {
     private SurvivalInventory() {}
@@ -84,5 +89,50 @@ public final class SurvivalInventory {
         int before = offered.getCount();
         human.getData().storeInventoryItem(offered);
         return before - offered.getCount();
+    }
+
+    /** Keeps only the best tool for each tool type across equipment and inventory. */
+    public static void discardDuplicateTieredTools(Human human) {
+        Map<Class<?>, ItemStack> kept = new HashMap<>();
+        for (EquipmentSlot slot : EquipmentSlot.values()) {
+            ItemStack stack = human.getItemBySlot(slot);
+            keepBest(kept, stack);
+        }
+        if (human.getData() == null) return;
+        for (int slot = 0; slot < human.getData().getInventoryItemsSize(); slot++) {
+            ItemStack stack = human.getData().getInventoryItem(slot);
+            keepBest(kept, stack);
+        }
+        for (EquipmentSlot slot : EquipmentSlot.values()) {
+            ItemStack stack = human.getItemBySlot(slot);
+            if (isTieredTool(stack) && kept.get(toolType(stack)) != stack) human.setItemSlot(slot, ItemStack.EMPTY);
+        }
+        for (int slot = 0; slot < human.getData().getInventoryItemsSize(); slot++) {
+            ItemStack stack = human.getData().getInventoryItem(slot);
+            if (isTieredTool(stack) && kept.get(toolType(stack)) != stack) human.getData().setInventoryItem(slot, ItemStack.EMPTY);
+        }
+    }
+
+    private static void keepBest(Map<Class<?>, ItemStack> kept, ItemStack candidate) {
+        Class<?> type = toolType(candidate);
+        if (type == null) return;
+        ItemStack current = kept.get(type);
+        if (current == null || tierLevel(candidate) > tierLevel(current)) kept.put(type, candidate);
+    }
+
+    private static int tierLevel(ItemStack stack) {
+        return stack.getItem() instanceof net.minecraft.world.item.TieredItem tiered ? tiered.getTier().getLevel() : -1;
+    }
+
+    private static Class<?> toolType(ItemStack stack) {
+        if (stack.getItem() instanceof PickaxeItem) return PickaxeItem.class;
+        if (stack.getItem() instanceof AxeItem) return AxeItem.class;
+        if (stack.getItem() instanceof SwordItem) return SwordItem.class;
+        return null;
+    }
+
+    private static boolean isTieredTool(ItemStack stack) {
+        return stack.getItem() instanceof PickaxeItem || stack.getItem() instanceof AxeItem
+                || stack.getItem() instanceof SwordItem;
     }
 }

@@ -19,7 +19,7 @@ import java.util.Map;
 import java.util.UUID;
 
 public final class SquadNeedsEvaluator {
-    private static final int FOOD_PER_MEMBER = 8;
+    private static final int FOOD_PER_MEMBER = 4;
     private static final int STONE_PER_BASIC_TOOL = 3;
     private static final Map<Key, Cached> CACHE = new HashMap<>();
 

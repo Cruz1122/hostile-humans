@@ -1,6 +1,8 @@
 # Testing
 
-Hostile Humans uses Forge GameTests on a dedicated server. The suite currently contains 119 required tests in 10 domain scopes.
+Hostile Humans uses Forge GameTests on a dedicated server. The current source
+contains 143 `@GameTest` declarations in 10 domain scopes. Always trust the
+non-zero expected-test count printed by Forge for the effective run count.
 
 ## Fast feedback loop
 

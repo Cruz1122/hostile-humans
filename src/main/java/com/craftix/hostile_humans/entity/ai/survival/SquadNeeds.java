@@ -6,6 +6,16 @@ import java.util.Map;
 import java.util.Optional;
 
 public final class SquadNeeds {
+    private static final SquadNeed[] PRIORITY = {
+            SquadNeed.WOOD,
+            SquadNeed.FUEL,
+            SquadNeed.STONE,
+            SquadNeed.IRON,
+            SquadNeed.GOLD,
+            SquadNeed.DIAMOND,
+            SquadNeed.APPLES,
+            SquadNeed.FOOD
+    };
     private final EnumMap<SquadNeed, Integer> deficits;
 
     public SquadNeeds(Map<SquadNeed, Integer> deficits) {
@@ -28,7 +38,7 @@ public final class SquadNeeds {
     }
 
     public Optional<SquadNeed> highestPriority() {
-        for (SquadNeed need : SquadNeed.values()) if (needs(need)) return Optional.of(need);
+        for (SquadNeed need : PRIORITY) if (needs(need)) return Optional.of(need);
         return Optional.empty();
     }
 }

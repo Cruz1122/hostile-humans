@@ -70,7 +70,12 @@ public final class LocalResourceScanner {
             }
             boolean hiddenOre = matchingNeed != null && isOreNeed(matchingNeed) && !exposed(human, mutable);
             if (matchingNeed == null || ignored.test(mutable)
-                    || (!exposed(human, mutable) && (!hiddenOre || !Config.allowHiddenOreMining.get()))
+                    // Logs may be hidden behind another log in a tree. The
+                    // batch gatherer deliberately clears those from the
+                    // bottom up; ores and other resources retain exposure
+                    // rules unless hidden mining is explicitly enabled.
+                    || (matchingNeed != SquadNeed.WOOD
+                    && !exposed(human, mutable) && (!hiddenOre || !Config.allowHiddenOreMining.get()))
                     || SurvivalClaimManager.resourceClaimedByOther(human, mutable)
                     || !toolCanHarvest(human, state)) continue;
             candidates.computeIfAbsent(matchingNeed, ignoredNeed -> new java.util.ArrayList<>())
@@ -82,14 +87,15 @@ public final class LocalResourceScanner {
             options.sort(Comparator.comparingDouble(pos -> pos.distSqr(origin)));
             // Keep a small fallback set. The nearest block is not necessarily
             // the reachable one (a common cause of apparently idle humans).
-            for (BlockPos pos : options.subList(0, Math.min(4, options.size()))) {
+            int fallbackLimit = need == SquadNeed.WOOD ? options.size() : Math.min(4, options.size());
+            for (BlockPos pos : options.subList(0, fallbackLimit)) {
                 if (!validatePath) return Optional.of(new ResourceTarget(need, pos));
-                Optional<BlockPos> interaction = interactionPosition(human, pos);
+                Optional<BlockPos> interaction = interactionPosition(human, pos, need == SquadNeed.WOOD);
                 // A nearby block can be mined without a walkable cell at the
                 // block's own height. This matters for vertical trees and ledges.
                 if (withinGatherRange(human, pos)
                         && (Config.allowHiddenOreMining.get() && isOreNeed(need) || exposed(human, pos))
-                        || interaction.isPresent() && reachable(human, pos)) {
+                        || interaction.isPresent() && reachable(human, pos, need == SquadNeed.WOOD)) {
                     return Optional.of(new ResourceTarget(need, pos));
                 }
             }
@@ -113,16 +119,24 @@ public final class LocalResourceScanner {
         return ProgressiveBlockBreaker.withinReach(human, resource);
     }
 
-    private static boolean reachable(Human human, BlockPos resource) {
-        return SurvivalPathing.createPath(human, interactionPositions(human, resource), 0).isPresent();
+    private static boolean reachable(Human human, BlockPos resource, boolean allowOccluded) {
+        return SurvivalPathing.createPath(human, interactionPositions(human, resource, allowOccluded), 0).isPresent();
     }
 
     public static Optional<BlockPos> interactionPosition(Human human, BlockPos resource) {
-        return interactionPositions(human, resource).stream().findFirst();
+        return interactionPosition(human, resource, false);
+    }
+
+    public static Optional<BlockPos> interactionPosition(Human human, BlockPos resource, boolean allowOccluded) {
+        return interactionPositions(human, resource, allowOccluded).stream().findFirst();
     }
 
     /** Returns supported, empty cells from which the resource can be reached. */
     public static List<BlockPos> interactionPositions(Human human, BlockPos resource) {
+        return interactionPositions(human, resource, false);
+    }
+
+    public static List<BlockPos> interactionPositions(Human human, BlockPos resource, boolean allowOccluded) {
         BlockPos origin = human.blockPosition();
         return BlockPos.betweenClosedStream(resource.offset(-2, -2, -2), resource.offset(2, 3, 2))
                 .filter(human.level()::hasChunkAt)
@@ -138,10 +152,7 @@ public final class LocalResourceScanner {
                 // Elevated resources can still be approached from a lower
                 // supported cell; pathfinding validates the complete route.
                 .filter(pos -> ProgressiveBlockBreaker.withinReachFrom(human, pos, resource))
-                // A farther empty cell is valid for elevated blocks, but it
-                // must have a clear view. Otherwise a solid block can hide the
-                // resource and large ore veins select an inaccessible inner block.
-                .filter(pos -> ProgressiveBlockBreaker.hasLineOfSightFrom(human, pos, resource))
+                .filter(pos -> allowOccluded || ProgressiveBlockBreaker.hasLineOfSightFrom(human, pos, resource))
                 .map(BlockPos::immutable)
                 // The mining cell must be selected by its distance to the
                 // resource first. Choosing only by distance to the human can

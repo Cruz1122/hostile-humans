@@ -7,6 +7,9 @@ import net.minecraft.world.inventory.CraftingContainer;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.inventory.TransientCraftingContainer;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.AxeItem;
+import net.minecraft.world.item.PickaxeItem;
+import net.minecraft.world.item.SwordItem;
 import net.minecraft.world.item.crafting.CraftingRecipe;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeType;
@@ -24,6 +27,7 @@ public final class SurvivalRecipeService {
 
     public static Optional<ItemStack> craft(Human human, Predicate<ItemStack> desired, boolean tableAvailable) {
         if (human.level().isClientSide || human.getData() == null) return Optional.empty();
+        SurvivalInventory.discardDuplicateTieredTools(human);
         for (CraftingRecipe recipe : candidates(human, desired)) {
             ItemStack advertised = recipe.getResultItem(human.level().registryAccess());
             if (advertised.isEmpty()) continue;
@@ -83,6 +87,7 @@ public final class SurvivalRecipeService {
         if (!recipe.matches(grid, human.level())) return Optional.empty();
         ItemStack output = recipe.assemble(grid, human.level().registryAccess());
         if (output.isEmpty()) return Optional.empty();
+        if (isDuplicateTieredTool(human, output)) return Optional.empty();
         NonNullList<ItemStack> remainders = recipe.getRemainingItems(grid);
         List<ItemStack> produced = new ArrayList<>();
         produced.add(output);
@@ -106,6 +111,22 @@ public final class SurvivalRecipeService {
         human.queueEquipmentReevaluation();
         SquadNeedsEvaluator.invalidate(human);
         return Optional.of(output.copy());
+    }
+
+    private static boolean isDuplicateTieredTool(Human human, ItemStack output) {
+        if (!(output.getItem() instanceof PickaxeItem || output.getItem() instanceof AxeItem
+                || output.getItem() instanceof SwordItem)
+                || !(output.getItem() instanceof net.minecraft.world.item.TieredItem outputTiered)) {
+            return false;
+        }
+        int outputLevel = outputTiered.getTier().getLevel();
+        return SurvivalInventory.contains(human, stack -> {
+            if (!(stack.getItem() instanceof net.minecraft.world.item.TieredItem existingTiered)) return false;
+            boolean sameType = output.getItem() instanceof PickaxeItem && stack.getItem() instanceof PickaxeItem
+                    || output.getItem() instanceof AxeItem && stack.getItem() instanceof AxeItem
+                    || output.getItem() instanceof SwordItem && stack.getItem() instanceof SwordItem;
+            return sameType && existingTiered.getTier().getLevel() >= outputLevel;
+        });
     }
 
     private static List<Reserved> reserveIngredients(Human human, List<Ingredient> ingredients) {

@@ -6,6 +6,7 @@ import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.AbstractCookingRecipe;
 import net.minecraft.world.item.crafting.RecipeType;
+import net.minecraft.world.level.block.FurnaceBlock;
 import net.minecraft.world.level.block.entity.AbstractFurnaceBlockEntity;
 import net.minecraftforge.common.ForgeHooks;
 
@@ -34,7 +35,13 @@ public final class FurnaceOperation {
                 return Result.RETRIEVED;
             }
         }
-        if (!furnace.getItem(0).isEmpty()) return Result.WAITING;
+        if (!furnace.getItem(0).isEmpty()) {
+            // An input without remaining fuel can never make progress. Do not
+            // leave the survival goal waiting forever beside a dead furnace.
+            if (!furnace.getBlockState().getValue(FurnaceBlock.LIT)
+                    && furnace.getItem(1).isEmpty()) return Result.FAILED;
+            return Result.WAITING;
+        }
         Input input = findInput(human).orElse(null);
         if (input == null) return Result.FAILED;
         ItemStack fuel = findFuel(human).orElse(null);
@@ -50,6 +57,10 @@ public final class FurnaceOperation {
         furnace.setChanged();
         SquadNeedsEvaluator.invalidate(human);
         return Result.INSERTED;
+    }
+
+    public static boolean hasAvailableFuel(Human human) {
+        return findFuel(human).isPresent();
     }
 
     private static Optional<Input> findInput(Human human) {

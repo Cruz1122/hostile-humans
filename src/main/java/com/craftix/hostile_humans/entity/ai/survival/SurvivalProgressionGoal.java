@@ -14,8 +14,8 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.util.Mth;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.animal.Chicken;
 import net.minecraft.world.entity.animal.Cow;
 import net.minecraft.world.entity.animal.Pig;
@@ -55,6 +55,7 @@ public final class SurvivalProgressionGoal extends Goal {
     private static final int CRAFTING_PACE_TICKS = 20;
     private static final int FURNACE_INTERACTION_PACE_TICKS = 10;
     private static final int RESOURCE_FORWARD_NUDGE_TICKS = 20;
+    private static final int MAX_WOOD_BATCH_ACTIONS = 8;
     private static final int RESOURCE_FORWARD_NUDGE_DURATION_TICKS = 14;
     private static final double RESOURCE_MOVEMENT_EPSILON_SQR = 0.0004D;
     private static final double RESOURCE_FORWARD_NUDGE_DISTANCE = 3.0D;
@@ -67,6 +68,8 @@ public final class SurvivalProgressionGoal extends Goal {
     private Mode mode;
     private BlockPos targetPos;
     private Entity animal;
+    private SquadNeed resourceBatchNeed;
+    private int resourceBatchActions;
     private ProgressiveBlockBreaker breaker;
     private int actionTicks;
     private int huntStalledTicks;
@@ -127,9 +130,19 @@ public final class SurvivalProgressionGoal extends Goal {
     private boolean planNextAction(boolean allowExploration) {
         if (human.isInvestigatingSound()) return false;
         SquadNeeds needs = SquadNeedsEvaluator.evaluate(human);
+        SurvivalInventory.discardDuplicateTieredTools(human);
         if (tryShare(needs)) {
             controller.completeImmediate(new SurvivalIntent(SurvivalTask.SHARE, SurvivalObjective.FOOD));
             return false;
+        }
+        if (planBatchedResource(needs)) return true;
+        // Food is a fallback reserve, not a reason to interrupt progression.
+        // Once it is the only outstanding need, prefer a hunt over optional
+        // gear crafting that happens to be possible at a nearby table.
+        if (needs.needs(SquadNeed.FOOD) && needs.highestPriority().orElse(null) == SquadNeed.FOOD
+                && selectAnimal()) {
+            controller.plan(new SurvivalIntent(SurvivalTask.HUNT, SurvivalObjective.FOOD));
+            return true;
         }
         if (prepareImmediateCraftingMaterials()) return false;
         // Table crafting is a real station action. Do not complete the gear
@@ -149,13 +162,11 @@ public final class SurvivalProgressionGoal extends Goal {
                 need = selected.need();
                 targetPos = selected.pos();
                 mode = Mode.RESOURCE;
+                resourceBatchNeed = selected.need();
+                resourceBatchActions = 0;
                 controller.plan(new SurvivalIntent(SurvivalTask.GATHER, objectiveFor(selected.need())));
                 return true;
             }
-        }
-        if (needs.needs(SquadNeed.FOOD) && selectAnimal()) {
-            controller.plan(new SurvivalIntent(SurvivalTask.HUNT, SurvivalObjective.FOOD));
-            return true;
         }
         if (selectFurnace(needs)) {
             controller.plan(new SurvivalIntent(SurvivalTask.SMELT, SurvivalObjective.IRON_GEAR));
@@ -374,8 +385,12 @@ public final class SurvivalProgressionGoal extends Goal {
             targetPos = null;
             if (result == WorldActionResult.SUCCESS) {
                 controller.completeTask();
-                // Keep the goal alive in PLANNING so the next resource is
-                // selected by the same controller on the next server tick.
+                // Keep gathering the same resource need before hand-crafting
+                // bootstrap materials or moving to a station. This lets a
+                // vertical tree be harvested as one action instead of stopping
+                // after the first log and leaving upper logs behind.
+                resourceBatchNeed = need;
+                resourceBatchActions++;
             } else {
                 controller.fail(SurvivalFailureReason.TARGET_CHANGED, 10);
                 mode = null;
@@ -386,13 +401,11 @@ public final class SurvivalProgressionGoal extends Goal {
 
     /** Keep walking to the selected interaction cell instead of mining from the scan radius edge. */
     private boolean withinResourceMiningRange() {
-        if (!ProgressiveBlockBreaker.withinReach(human, targetPos)) {
-            return false;
-        }
-        List<BlockPos> interactions = LocalResourceScanner.interactionPositions(human, targetPos);
-        return interactions.isEmpty() || interactions.stream().anyMatch(interaction ->
-                human.distanceToSqr(interaction.getX() + 0.5D,
-                        interaction.getY(), interaction.getZ() + 0.5D) <= RESOURCE_INTERACTION_TOLERANCE_SQR);
+        // The breaker validates reach from the actual entity eye. Do not use
+        // the distance to a hypothetical interaction cell as a shortcut: that
+        // can start the breaker one or two blocks too far away and turn a
+        // normal navigation delay into a TARGET_CHANGED failure.
+        return ProgressiveBlockBreaker.withinReach(human, targetPos);
     }
 
     private void tickStation() {
@@ -486,6 +499,7 @@ public final class SurvivalProgressionGoal extends Goal {
     /** Performs only hand-crafting/bootstrap preparation during planning. */
     private boolean prepareImmediateCraftingMaterials() {
         boolean changed = false;
+        int shieldPlankReserve = reservedShieldPlanks();
         for (int craft = 0; craft < 6; craft++) {
             int planks = SurvivalInventory.count(human, stack -> stack.is(ItemTags.PLANKS));
             int sticks = SurvivalInventory.count(human, Items.STICK);
@@ -498,6 +512,10 @@ public final class SurvivalProgressionGoal extends Goal {
             if (!step) {
                 boolean canMakeSticks = hasPickaxe ? planks > 0 : planks > 2;
                 step = sticks < sticksThreshold && canMakeSticks
+                        // A shield is mandatory once iron progression starts.
+                        // Never turn its six planks into sticks while preparing
+                        // the next tool.
+                        && planks - 2 >= shieldPlankReserve
                         && SurvivalRecipeService.craft(human, stack -> stack.is(Items.STICK), false).isPresent();
             }
             boolean knownTable = hasNearbyStation(Blocks.CRAFTING_TABLE)
@@ -514,17 +532,58 @@ public final class SurvivalProgressionGoal extends Goal {
         return changed;
     }
 
+    private boolean planBatchedResource(SquadNeeds needs) {
+        if (resourceBatchNeed == null) return false;
+        if (resourceBatchActions >= MAX_WOOD_BATCH_ACTIONS) {
+            resourceBatchNeed = null;
+            return false;
+        }
+
+        // The first block in a vertical tree can hide the next one from the
+        // path probe. Select the nearest exposed block here and let the normal
+        // resource tick validate its interaction cell and recover on failure.
+        Optional<LocalResourceScanner.ResourceTarget> resource = LocalResourceScanner.findReachableFirst(
+                human, List.of(resourceBatchNeed),
+                pos -> failedResourceUntil.getOrDefault(pos, 0) > human.tickCount);
+        if (resource.isEmpty()) {
+            // The batch is complete for the currently reachable area. Normal
+            // planning may now craft with the materials that were collected.
+            resourceBatchNeed = null;
+            return false;
+        }
+
+        LocalResourceScanner.ResourceTarget selected = resource.get();
+        if (!SurvivalClaimManager.claimResource(human, selected.pos())) {
+            return false;
+        }
+        need = selected.need();
+        targetPos = selected.pos();
+        mode = Mode.RESOURCE;
+        // A batch contains several bounded block actions. Reset the per-block
+        // navigation timeout so the goal cannot expire halfway through a tree
+        // simply because the first log consumed the whole action budget.
+        actionTicks = 0;
+        navigationStalledTicks = 0;
+        resetResourceProgress();
+        controller.plan(new SurvivalIntent(SurvivalTask.GATHER, objectiveFor(selected.need())));
+        return true;
+    }
+
     private boolean craftNeededGear() {
         if (SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof PickaxeItem
                 && allowedToolUpgrade(stack, PickaxeItem.class), true).isPresent()) return true;
-        if (SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof AxeItem
-                && allowedToolUpgrade(stack, AxeItem.class), true).isPresent()) return true;
-        // Mining tools take precedence over combat upgrades so the human can
-        // immediately continue gathering stone after the first wood stage.
+        // Diamond combat gear is more useful than an optional axe. Keep the
+        // pickaxe first, then the sword and every available diamond armor
+        // piece, before spending the reserve on a diamond axe.
         if (SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof SwordItem
                 && allowedToolUpgrade(stack, SwordItem.class), true).isPresent()) return true;
+        if (SurvivalRecipeService.craft(human, this::allowedDiamondArmor, true).isPresent()) return true;
+        // The shield is mandatory combat gear and remains ahead of optional
+        // axes whenever its recipe is available.
         if (!SurvivalInventory.contains(human, stack -> stack.is(Items.SHIELD))
                 && SurvivalRecipeService.craft(human, stack -> stack.is(Items.SHIELD), true).isPresent()) return true;
+        if (SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof AxeItem
+                && allowedToolUpgrade(stack, AxeItem.class), true).isPresent()) return true;
         // Iron armor is an opportunistic upgrade. Keep the iron needed by the
         // mandatory iron pickaxe and shield before spending any on armor.
         if (SurvivalInventory.count(human, Items.IRON_INGOT) > mandatoryIronReserve()
@@ -536,6 +595,13 @@ public final class SurvivalProgressionGoal extends Goal {
                 && SurvivalRecipeService.craft(human, stack -> stack.getItem() instanceof net.minecraft.world.item.ArmorItem
                 && allowedArmorUpgrade(stack)
                 && GearUpgradePolicy.usefulUpgrade(human, stack), true).isPresent();
+    }
+
+    private boolean allowedDiamondArmor(ItemStack stack) {
+        return stack.getItem() instanceof net.minecraft.world.item.ArmorItem armor
+                && armor.getMaterial() == net.minecraft.world.item.ArmorMaterials.DIAMOND
+                && allowedArmorUpgrade(stack)
+                && GearUpgradePolicy.usefulUpgrade(human, stack);
     }
 
     private int mandatoryIronReserve() {
@@ -550,16 +616,34 @@ public final class SurvivalProgressionGoal extends Goal {
     private boolean allowedToolUpgrade(ItemStack candidate, Class<?> type) {
         if (!(candidate.getItem() instanceof net.minecraft.world.item.TieredItem tiered)) return false;
         int level = tiered.getTier().getLevel();
-        int current = SurvivalInventory.count(human, stack -> type.isInstance(stack.getItem())
-                && stack.getItem() instanceof net.minecraft.world.item.TieredItem owned
-                && owned.getTier().getLevel() >= level) > 0 ? level : -1;
+        // A tiered item is unique progression gear. Do not craft another copy
+        // when an equal-or-better one is already in storage or equipped,
+        // including a damaged tool that is still usable.
+        if (hasToolAtLeast(type, level)
+                || SurvivalInventory.contains(human, stack -> stack.is(candidate.getItem()))) return false;
         if (type == PickaxeItem.class) {
-            if (level >= 3) return hasIronPick() && current < level;
-            if (level == 2) return hasStoneUsefulTools() && current < level;
-            return current < level;
+            if (level >= 3) return hasIronPick();
+            if (level == 2) return hasStoneUsefulTools();
+            return true;
         }
-        if (level <= 1) return current < level;
-        return level >= 3 && hasIronPick() && current < level;
+        if (level <= 1) return true;
+        return level >= 3 && hasIronPick();
+    }
+
+    private boolean hasToolAtLeast(Class<?> type, int level) {
+        return SurvivalInventory.contains(human, stack -> type.isInstance(stack.getItem())
+                && stack.getItem() instanceof net.minecraft.world.item.TieredItem tiered
+                && tiered.getTier().getLevel() >= level);
+    }
+
+    private int reservedShieldPlanks() {
+        boolean hasShieldIron = SurvivalInventory.contains(human,
+                stack -> stack.is(Items.IRON_INGOT) || stack.is(Items.RAW_IRON));
+        // The iron pickaxe itself needs two sticks. Reserve shield planks only
+        // after that prerequisite exists; reserving them earlier can leave a
+        // four-plank worker unable to craft the sticks needed for the pickaxe.
+        return !SurvivalInventory.contains(human, stack -> stack.is(Items.SHIELD))
+                && hasIronPick() && hasShieldIron ? 6 : 0;
     }
 
     private boolean hasIronPick() {
@@ -669,10 +753,10 @@ public final class SurvivalProgressionGoal extends Goal {
                 // A batch is already cooking and there is nothing to retrieve.
                 // Do not claim MOVE just to stand beside the furnace.
                 return false;
-            } else if (smeltable == 0) {
+            } else if (smeltable == 0 || !FurnaceOperation.hasAvailableFuel(human)) {
                 return false;
             }
-        } else if (smeltable == 0) {
+        } else if (smeltable == 0 || !FurnaceOperation.hasAvailableFuel(human)) {
             return false;
         }
         if (furnace.isEmpty() && SurvivalInventory.count(human, Items.FURNACE) == 0) {
@@ -699,12 +783,13 @@ public final class SurvivalProgressionGoal extends Goal {
     private boolean canCraftNeededGear() {
         if (SurvivalRecipeService.canCraft(human, stack -> stack.getItem() instanceof PickaxeItem
                 && allowedToolUpgrade(stack, PickaxeItem.class), true)) return true;
-        if (SurvivalRecipeService.canCraft(human, stack -> stack.getItem() instanceof AxeItem
-                && allowedToolUpgrade(stack, AxeItem.class), true)) return true;
         if (SurvivalRecipeService.canCraft(human, stack -> stack.getItem() instanceof SwordItem
                 && allowedToolUpgrade(stack, SwordItem.class), true)) return true;
+        if (SurvivalRecipeService.canCraft(human, this::allowedDiamondArmor, true)) return true;
         if (!SurvivalInventory.contains(human, stack -> stack.is(Items.SHIELD))
                 && SurvivalRecipeService.canCraft(human, stack -> stack.is(Items.SHIELD), true)) return true;
+        if (SurvivalRecipeService.canCraft(human, stack -> stack.getItem() instanceof AxeItem
+                && allowedToolUpgrade(stack, AxeItem.class), true)) return true;
         if (SurvivalInventory.count(human, Items.IRON_INGOT) > mandatoryIronReserve()
                 && SurvivalRecipeService.canCraft(human, stack -> stack.getItem() instanceof net.minecraft.world.item.ArmorItem
                 && allowedArmorUpgrade(stack)
@@ -809,7 +894,7 @@ public final class SurvivalProgressionGoal extends Goal {
     private void moveToTarget() {
         if (targetPos == null) return;
         if (mode == Mode.RESOURCE) {
-            List<BlockPos> interactions = LocalResourceScanner.interactionPositions(human, targetPos);
+            List<BlockPos> interactions = LocalResourceScanner.interactionPositions(human, targetPos, need == SquadNeed.WOOD);
             if (!interactions.isEmpty()) SurvivalPathing.moveTo(human, interactions, 0, 0.8D);
             return;
         }

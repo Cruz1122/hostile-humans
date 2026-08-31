@@ -67,6 +67,13 @@ public class Config {
     public static ForgeConfigSpec.IntValue explorationRadius;
     public static ForgeConfigSpec.IntValue survivalPathBudgetPerTick;
     public static ForgeConfigSpec.IntValue survivalScanBudgetPerTick;
+    public static ForgeConfigSpec.BooleanValue enableNaturalHumanSpawning;
+    public static ForgeConfigSpec.IntValue spawnAttemptIntervalTicks;
+    public static ForgeConfigSpec.IntValue minSpawnDistance;
+    public static ForgeConfigSpec.IntValue maxSpawnDistance;
+    public static ForgeConfigSpec.IntValue nearbyHumanCapPerPlayer;
+    public static ForgeConfigSpec.IntValue dimensionHumanCap;
+    public static ForgeConfigSpec.DoubleValue legendSpawnWeight;
 
     static {
         BUILDER.push("Hostile Humans Settings");
@@ -154,6 +161,23 @@ public class Config {
                 .defineInRange("survivalPathBudgetPerTick", 100, 10, 1000);
         survivalScanBudgetPerTick = SERVER_BUILDER.comment("Maximum full survival resource scans per dimension and tick")
                 .defineInRange("survivalScanBudgetPerTick", 50, 5, 500);
+        SERVER_BUILDER.pop();
+
+        SERVER_BUILDER.push("naturalSpawning");
+        enableNaturalHumanSpawning = SERVER_BUILDER.comment("Enable server-side natural Human encounters")
+                .define("enableNaturalHumanSpawning", true);
+        spawnAttemptIntervalTicks = SERVER_BUILDER.comment("Ticks between bounded natural spawn attempts")
+                .defineInRange("spawnAttemptIntervalTicks", 120, 20, 1200);
+        minSpawnDistance = SERVER_BUILDER.comment("Minimum horizontal distance from an eligible player")
+                .defineInRange("minSpawnDistance", 24, 8, 128);
+        maxSpawnDistance = SERVER_BUILDER.comment("Maximum distance from an eligible player")
+                .defineInRange("maxSpawnDistance", 80, 24, 192);
+        nearbyHumanCapPerPlayer = SERVER_BUILDER.comment("Maximum loaded Humans near one player")
+                .defineInRange("nearbyHumanCapPerPlayer", 8, 1, 64);
+        dimensionHumanCap = SERVER_BUILDER.comment("Maximum loaded Humans in one dimension")
+                .defineInRange("dimensionHumanCap", 40, 1, 256);
+        legendSpawnWeight = SERVER_BUILDER.comment("Fraction of natural encounters assigned to Minecraft Legends")
+                .defineInRange("legendSpawnWeight", 0.02D, 0.0D, 1.0D);
         SERVER_BUILDER.pop();
 
         BUILDER.pop();

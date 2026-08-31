@@ -47,9 +47,7 @@ public class SpawnHandler {
     }
 
     public static boolean checkHumanSpawnRules(EntityType<? extends Human> p_33018_, ServerLevelAccessor p_33019_, MobSpawnType p_33020_, BlockPos p_33021_, RandomSource random) {
-        int spawnRoll = Math.max(1, Config.roamerNaturalSpawnRoll.get());
-        if (random.nextInt(spawnRoll) != 0) return false;
-        return isBrightEnoughToSpawn(p_33019_, p_33021_, random) && checkMobSpawnRules(p_33018_, p_33019_, p_33020_, p_33021_, random);
+        return checkMobSpawnRules(p_33018_, p_33019_, p_33020_, p_33021_, random);
     }
 
     public static boolean isBrightEnoughToSpawn(ServerLevelAccessor p_33009_, BlockPos p_33010_, RandomSource p_33011_) {

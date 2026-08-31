@@ -33,6 +33,7 @@ Available scopes:
 | `sound` | sound events, investigation, visible targeting |
 | `worldnavigation` | pillar, bridge, mining, controller integration |
 | `survival` | needs, resources, loot, crafting, hunting, furnace, sharing |
+| `worldprogression` | persistent gear milestones, spawn contexts, natural Human initialization and bounds |
 
 Unknown scopes fail during Gradle configuration. Always confirm that the GameTest summary reports a non-zero expected test count.
 
@@ -50,6 +51,7 @@ Unknown scopes fail during Gradle configuration. Always confirm that the GameTes
 - `MeleeWeaponSelector`, melee item tags, equipment reevaluation: `equipment,shield`.
 - `persona/**` and `personas.json`: `persona,squad`.
 - Shared entity/data/configuration, registries, Mixins, templates, Gradle, or uncertain impact: run the full suite.
+- World progression or natural spawning: `worldprogression`; run the full suite because configuration, entity lifecycle and dimensions are shared.
 
 ## Final gate
 

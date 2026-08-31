@@ -97,6 +97,8 @@ import static com.craftix.hostile_humans.HumanUtil.*;
 import static com.craftix.hostile_humans.entity.entities.HumanInventoryGenerator.generateInventory;
 import static com.craftix.hostile_humans.entity.entities.ModEntityType.ROAMER;
 
+import com.craftix.hostile_humans.entity.spawner.SpawnContext;
+
 public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttackMob, PotionRangedAttackMob {
 
     public static final ItemStack[] EXTRA_EDIBLE_ITEMS = new ItemStack[]{Items.GOLDEN_APPLE.getDefaultInstance(), PotionUtils.setPotion(Items.POTION.getDefaultInstance(), Potions.REGENERATION), PotionUtils.setPotion(Items.POTION.getDefaultInstance(), Potions.HEALING)};
@@ -156,6 +158,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     private boolean personaReservationReleased;
     @Nullable
     private UUID squadId;
+    private SpawnContext spawnContext = SpawnContext.UNKNOWN;
     @Nullable
     private UUID squadTargetUuid;
     @Nullable
@@ -735,6 +738,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         }
         if (this.combatSkillTierOverride != null) compound.putInt("CombatSkillTier", this.combatSkillTierOverride.ordinal() + 1);
         if (this.squadId != null) compound.putUUID("SquadId", this.squadId);
+        if (this.spawnContext != SpawnContext.UNKNOWN) compound.putString("SpawnContext", this.spawnContext.name());
     }
 
     @Override
@@ -759,6 +763,13 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         this.combatSkillTierOverride = savedCombatTier >= 1 && savedCombatTier <= CombatSkillTier.values().length
                 ? CombatSkillTier.values()[savedCombatTier - 1] : null;
         this.squadId = compound.hasUUID("SquadId") ? compound.getUUID("SquadId") : null;
+        if (compound.contains("SpawnContext")) {
+            try {
+                this.spawnContext = SpawnContext.valueOf(compound.getString("SpawnContext"));
+            } catch (IllegalArgumentException ignored) {
+                this.spawnContext = SpawnContext.UNKNOWN;
+            }
+        }
         this.equipmentDirty = true;
         restorePersonaReservation();
         queueEquipmentReevaluation();
@@ -837,6 +848,14 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         if (squadId != null && getPersonaDefinition().isEmpty()) return false;
         this.squadId = squadId;
         return true;
+    }
+
+    public SpawnContext getSpawnContext() {
+        return spawnContext;
+    }
+
+    public void setSpawnContext(SpawnContext spawnContext) {
+        this.spawnContext = spawnContext == null ? SpawnContext.UNKNOWN : spawnContext;
     }
 
     public void receiveSquadAlert(LivingEntity target, BlockPos lastKnownPos, long seenTick,

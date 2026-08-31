@@ -1,0 +1,17 @@
+{
+  "replace": false,
+  "values": [
+    "minecraft:pillager_outpost",
+    "minecraft:mineshaft",
+    "minecraft:desert_pyramid",
+    "minecraft:igloo",
+    "minecraft:swamp_hut",
+    "minecraft:stronghold",
+    "minecraft:shipwreck",
+    "minecraft:ocean_ruin_cold",
+    "minecraft:ocean_ruin_warm",
+    "minecraft:ancient_city",
+    "minecraft:trail_ruins",
+    "minecraft:ruined_portal"
+  ]
+}

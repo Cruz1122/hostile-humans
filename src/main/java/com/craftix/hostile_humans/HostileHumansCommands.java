@@ -2,10 +2,13 @@ package com.craftix.hostile_humans;
 
 import com.craftix.hostile_humans.entity.data.HumanData;
 import com.craftix.hostile_humans.entity.entities.Human;
+import com.craftix.hostile_humans.entity.spawner.SpawnContextClassifier;
+import com.craftix.hostile_humans.progression.WorldGearProgressionSavedData;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
@@ -33,7 +36,11 @@ public final class HostileHumansCommands {
                         .executes(context -> inspectInventory(context, DEFAULT_RADIUS))
                         .then(Commands.argument("radius", IntegerArgumentType.integer(1, MAX_RADIUS))
                                 .executes(context -> inspectInventory(context,
-                                        IntegerArgumentType.getInteger(context, "radius"))))));
+                                        IntegerArgumentType.getInteger(context, "radius")))))
+                .then(Commands.literal("progression")
+                        .executes(HostileHumansCommands::inspectProgression))
+                .then(Commands.literal("context")
+                        .executes(HostileHumansCommands::inspectContext)));
     }
 
     public static Optional<Human> findNearest(ServerLevel level, Vec3 origin, double radius) {
@@ -91,5 +98,21 @@ public final class HostileHumansCommands {
     private static String describe(ItemStack stack) {
         if (stack.isEmpty()) return "empty";
         return BuiltInRegistries.ITEM.getKey(stack.getItem()) + " x" + stack.getCount();
+    }
+
+    private static int inspectProgression(CommandContext<CommandSourceStack> context) {
+        WorldGearProgressionSavedData data = WorldGearProgressionSavedData.get(context.getSource().getLevel());
+        context.getSource().sendSuccess(() -> Component.literal(String.format(Locale.ROOT,
+                "World gear progression: IRON=%s GOLD=%s DIAMOND=%s NETHERITE=%s",
+                data.isIronUnlocked(), data.isGoldUnlocked(), data.isDiamondUnlocked(),
+                data.isNetheriteUnlocked())), false);
+        return 1;
+    }
+
+    private static int inspectContext(CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
+        source.sendSuccess(() -> Component.literal("Spawn context: "
+                + SpawnContextClassifier.classify(source.getLevel(), BlockPos.containing(source.getPosition()))), false);
+        return 1;
     }
 }

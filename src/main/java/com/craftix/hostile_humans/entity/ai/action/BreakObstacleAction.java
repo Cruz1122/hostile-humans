@@ -28,7 +28,14 @@ public final class BreakObstacleAction implements TacticalWorldAction {
         return action.tick(context) == WorldActionResult.RUNNING;
     }
 
-    private Direction direction(Human human) {
+    private Direction direction(WorldActionContext context) {
+        Human human = context.human();
+        if (context.objective() != null) {
+            BlockPos target = context.objective();
+            return Math.abs(target.getX() - human.getBlockX()) >= Math.abs(target.getZ() - human.getBlockZ())
+                    ? (target.getX() >= human.getBlockX() ? Direction.EAST : Direction.WEST)
+                    : (target.getZ() >= human.getBlockZ() ? Direction.SOUTH : Direction.NORTH);
+        }
         LivingEntity target = human.getTarget();
         if (target == null) return Direction.NORTH;
         return Math.abs(target.getX() - human.getX()) >= Math.abs(target.getZ() - human.getZ())
@@ -36,8 +43,9 @@ public final class BreakObstacleAction implements TacticalWorldAction {
                 : (target.getZ() >= human.getZ() ? Direction.SOUTH : Direction.NORTH);
     }
 
-    private BlockPos findObstacle(Human human) {
-        Direction direction = direction(human);
+    private BlockPos findObstacle(WorldActionContext context) {
+        Human human = context.human();
+        Direction direction = direction(context);
         BlockPos base = human.blockPosition().relative(direction);
         for (int y = 0; y <= 1; y++) {
             BlockPos candidate = base.above(y);
@@ -56,7 +64,7 @@ public final class BreakObstacleAction implements TacticalWorldAction {
                 || !human.getTarget().isAlive() || !WorldActionSupport.permitted(human)
                 || broken >= Config.maxMiningBlocksPerRecovery.get()
                 || human.getData() == null || human.getData().getInventoryItems().isEmpty()) return false;
-        if (targetBlockPos == null) targetBlockPos = findObstacle(human);
+        if (targetBlockPos == null) targetBlockPos = findObstacle(context);
         if (targetBlockPos == null) return false;
         targetState = human.level().getBlockState(targetBlockPos);
         return !targetState.isAir() && !targetState.is(TacticalTags.NEVER_BREAK) && !targetState.hasBlockEntity()

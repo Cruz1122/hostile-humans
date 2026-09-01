@@ -23,9 +23,10 @@ public final class PillarUpAction implements TacticalWorldAction {
     public boolean canStart(WorldActionContext context) {
         Human human = context.human();
         LivingEntity target = human.getTarget();
-        if (!Config.enablePillaring.get() || WorldActionSupport.critical(human) || target == null || !target.isAlive()
-                || placed == 0 && target.getY() <= human.getY() + 1.0D
-                || target.getY() - human.getY() > Config.maxPillarHeight.get()
+        double targetY = target == null && context.objective() != null ? context.objective().getY() : target == null ? human.getY() : target.getY();
+        if (!Config.enablePillaring.get() || WorldActionSupport.critical(human) || target == null && context.objective() == null || target != null && !target.isAlive()
+                || placed == 0 && targetY <= human.getY() + 1.0D
+                || targetY - human.getY() > Config.maxPillarHeight.get()
                 || human.distanceToSqr(target) > 25.0D || placed >= Config.maxPillarBlocksPerPursuit.get()
                 || !WorldActionSupport.permitted(human) || WorldActionSupport.constructionStack(human, false).isEmpty()) return false;
         BlockPos head = human.blockPosition().above(2);
@@ -56,7 +57,8 @@ public final class PillarUpAction implements TacticalWorldAction {
         if (!WorldActionSupport.place(human, placePos, stack.get(), state, net.minecraft.core.Direction.UP)) return WorldActionResult.FAILED;
         placed++;
         cooldown = Config.pillarPlacementCooldownTicks.get();
-        return placed >= Config.maxPillarBlocksPerPursuit.get() || human.getTarget().getY() <= human.getY() + 1.0D
+        double targetY = human.getTarget() == null && context.objective() != null ? context.objective().getY() : human.getTarget() == null ? human.getY() : human.getTarget().getY();
+        return placed >= Config.maxPillarBlocksPerPursuit.get() || targetY <= human.getY() + 1.0D
                 ? WorldActionResult.SUCCESS : WorldActionResult.RUNNING;
     }
 

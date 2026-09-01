@@ -2,6 +2,8 @@ package com.craftix.hostile_humans.entity.ai.action;
 
 import com.craftix.hostile_humans.Config;
 import com.craftix.hostile_humans.entity.entities.Human;
+import com.craftix.hostile_humans.entity.ai.mission.CampMissionController;
+import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
 
@@ -35,15 +37,18 @@ public final class TacticalWorldActionController {
             return;
         }
         LivingEntity target = human.getTarget();
-        if (target == null || !target.isAlive()) {
+        BlockPos objective = target == null ? CampMissionController.worldActionObjective(human) : null;
+        if ((target == null || !target.isAlive()) && objective == null) {
             stop(WorldActionResult.ABORTED);
             resetPursuit();
             return;
         }
-        if (target.getId() != lastTargetId) {
+        int objectiveId = objective == null ? 0 : objective.hashCode();
+        int currentTargetId = target == null ? objectiveId : target.getId();
+        if (currentTargetId != lastTargetId) {
             stop(WorldActionResult.ABORTED);
             resetPursuit();
-            lastTargetId = target.getId();
+            lastTargetId = currentTargetId;
             failedTicks = 0;
             lastPosition = human.position();
         }
@@ -54,7 +59,7 @@ public final class TacticalWorldActionController {
                 human.getNavigation().recomputePath();
                 return;
             }
-            WorldActionResult result = active.tick(new WorldActionContext(human));
+            WorldActionResult result = active.tick(new WorldActionContext(human, objective));
             recordActiveProgress();
             if (result != WorldActionResult.RUNNING) {
                 stop(result);
@@ -65,7 +70,7 @@ public final class TacticalWorldActionController {
         }
         if (retryCooldown > 0 || placedThisPursuit >= Config.maxBlocksPlacedPerPursuit.get()
                 && brokenThisPursuit >= Config.maxBlocksBrokenPerPursuit.get()) return;
-        TacticalWorldAction candidate = chooseCandidate(target);
+        TacticalWorldAction candidate = chooseCandidate(new WorldActionContext(human, objective));
         boolean madeMeaningfulProgress = human.position().distanceToSqr(lastPosition) >= MEANINGFUL_PROGRESS_SQR;
         boolean stalled = human.getNavigation().isStuck()
                 || human.getNavigation().isDone() && candidate != null
@@ -78,9 +83,10 @@ public final class TacticalWorldActionController {
         else retryCooldown = 40;
     }
 
-    private TacticalWorldAction chooseCandidate(LivingEntity target) {
-        WorldActionContext context = new WorldActionContext(human);
-        if (target.getY() > human.getY() + 1.0D
+    private TacticalWorldAction chooseCandidate(WorldActionContext context) {
+        LivingEntity target = human.getTarget();
+        double targetY = target == null ? context.objective().getY() : target.getY();
+        if (targetY > human.getY() + 1.0D
                 && pillarBlocksThisPursuit < Config.maxPillarBlocksPerPursuit.get()
                 && placedThisPursuit < Config.maxBlocksPlacedPerPursuit.get()) {
             PillarUpAction pillar = new PillarUpAction();

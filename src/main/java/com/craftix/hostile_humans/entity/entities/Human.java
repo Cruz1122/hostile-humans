@@ -19,6 +19,7 @@ import com.craftix.hostile_humans.entity.ai.squad.SquadManager;
 import com.craftix.hostile_humans.entity.ai.survival.SurvivalClaimManager;
 import com.craftix.hostile_humans.entity.ai.survival.SurvivalProgressionGoal;
 import com.craftix.hostile_humans.entity.ai.survival.SurvivalSnapshot;
+import com.craftix.hostile_humans.entity.ai.mission.CampMissionController;
 import com.craftix.hostile_humans.entity.equipment.MeleeWeaponSelector;
 import com.craftix.hostile_humans.entity.loadout.HumanDeathRewardCalculator;
 import com.craftix.hostile_humans.entity.loadout.HumanLoadoutGenerator;
@@ -168,6 +169,8 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     private boolean personaReservationReleased;
     @Nullable
     private UUID squadId;
+    @Nullable
+    private UUID campId;
     private SpawnContext spawnContext = SpawnContext.UNKNOWN;
     private boolean naturalSpawnLoadout;
     private int experiencePoints;
@@ -780,6 +783,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         }
         if (this.combatSkillTierOverride != null) compound.putInt("CombatSkillTier", this.combatSkillTierOverride.ordinal() + 1);
         if (this.squadId != null) compound.putUUID("SquadId", this.squadId);
+        if (this.campId != null) compound.putUUID("CampId", this.campId);
         if (this.spawnContext != SpawnContext.UNKNOWN) compound.putString("SpawnContext", this.spawnContext.name());
         compound.putInt("ExperiencePoints", this.experiencePoints);
     }
@@ -812,6 +816,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         this.combatSkillTierOverride = savedCombatTier >= 1 && savedCombatTier <= CombatSkillTier.values().length
                 ? CombatSkillTier.values()[savedCombatTier - 1] : null;
         this.squadId = compound.hasUUID("SquadId") ? compound.getUUID("SquadId") : null;
+        this.campId = compound.hasUUID("CampId") ? compound.getUUID("CampId") : null;
         this.experiencePoints = Math.max(0, compound.getInt("ExperiencePoints"));
         if (compound.contains("SpawnContext")) {
             try {
@@ -904,6 +909,15 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         if (squadId != null && getPersonaDefinition().isEmpty()) return false;
         this.squadId = squadId;
         return true;
+    }
+
+    @Nullable
+    public UUID getCampId() {
+        return campId;
+    }
+
+    public void setCampId(@Nullable UUID campId) {
+        this.campId = campId;
     }
 
     public SpawnContext getSpawnContext() {
@@ -1422,6 +1436,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         if (!this.level().isClientSide) {
             this.tacticalUtilityController.tick();
             this.tacticalWorldActionController.tick();
+            CampMissionController.tick(this);
             LivingEntity squadTarget = this.getTarget();
             if (squadTarget != null && this.tickCount >= this.nextSquadVisionShareTick
                     && this.hasLineOfSight(squadTarget)) {

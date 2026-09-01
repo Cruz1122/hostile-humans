@@ -8,6 +8,11 @@ import com.craftix.hostile_humans.entity.loadout.HumanLoadoutAudit;
 import com.craftix.hostile_humans.entity.loadout.HumanLoadoutShowcase;
 import com.craftix.hostile_humans.entity.spawner.SpawnContext;
 import com.craftix.hostile_humans.entity.spawner.SpawnContextClassifier;
+import com.craftix.hostile_humans.entity.ai.camp.Camp;
+import com.craftix.hostile_humans.entity.ai.camp.CampSavedData;
+import com.craftix.hostile_humans.entity.ai.mission.CampMissionController;
+import com.craftix.hostile_humans.entity.ai.camp.CampService;
+import com.craftix.hostile_humans.persona.PersonaFaction;
 import com.craftix.hostile_humans.progression.WorldGearProgressionSavedData;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.context.CommandContext;
@@ -64,11 +69,14 @@ public final class HostileHumansCommands {
                          .then(Commands.literal("tiers").executes(HostileHumansCommands::spawnDebugTiers)))
                 .then(Commands.literal("showcase")
                         .executes(context -> HumanLoadoutShowcase.build(context.getSource())))
-                .then(Commands.literal("audit")
+                         .then(Commands.literal("audit")
                         .executes(context -> auditLoadouts(context, 10_000))
                         .then(Commands.argument("samples", IntegerArgumentType.integer(100, 100_000))
-                                .executes(context -> auditLoadouts(context,
-                                        IntegerArgumentType.getInteger(context, "samples"))))));
+                                 .executes(context -> auditLoadouts(context,
+                                         IntegerArgumentType.getInteger(context, "samples")))))
+                .then(Commands.literal("camp").executes(HostileHumansCommands::createDebugCamp))
+                .then(Commands.literal("expedition").executes(HostileHumansCommands::startDebugExpedition))
+                .then(Commands.literal("raid").executes(HostileHumansCommands::startDebugRaid)));
     }
 
     public static Optional<Human> findNearest(ServerLevel level, Vec3 origin, double radius) {
@@ -164,6 +172,59 @@ public final class HostileHumansCommands {
                 "World gear progression: IRON=%s GOLD=%s DIAMOND=%s NETHERITE=%s",
                 data.isIronUnlocked(), data.isGoldUnlocked(), data.isDiamondUnlocked(),
                 data.isNetheriteUnlocked())), false);
+        return 1;
+    }
+
+    private static int createDebugCamp(CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
+        ServerLevel level = source.getLevel();
+        Human human = findNearest(level, source.getPosition(), 32).orElse(null);
+        PersonaFaction faction = human == null ? PersonaFaction.HISPANIC_CREATORS
+                : human.getPersonaDefinition().map(definition -> definition.faction()).orElse(PersonaFaction.HISPANIC_CREATORS);
+        Camp camp = CampService.createDebugCamp(level, BlockPos.containing(source.getPosition()), faction);
+        if (camp == null) {
+            source.sendFailure(Component.literal("Could not create a camp at the current position."));
+            return 0;
+        }
+        if (human != null) {
+            human.setCampId(camp.id());
+            if (human.getSquadId() != null) {
+                for (Human member : level.getEntitiesOfClass(Human.class, human.getBoundingBox().inflate(28))) {
+                    if (human.getSquadId().equals(member.getSquadId()) && human.getPersonaDefinition().map(a ->
+                            member.getPersonaDefinition().map(b -> a.faction() == b.faction()).orElse(false)).orElse(false)) member.setCampId(camp.id());
+                }
+            }
+        }
+        source.sendSuccess(() -> Component.literal("Created camp " + camp.id() + " for " + faction), false);
+        return 1;
+    }
+
+    private static int startDebugExpedition(CommandContext<CommandSourceStack> context) {
+        Human human = findNearest(context.getSource().getLevel(), context.getSource().getPosition(), 64).orElse(null);
+        if (human == null || !CampMissionController.forceExpedition(human)) {
+            context.getSource().sendFailure(Component.literal("No camp Human could start an expedition."));
+            return 0;
+        }
+        context.getSource().sendSuccess(() -> Component.literal("Expedition started for squad " + human.getSquadId()), false);
+        return 1;
+    }
+
+    private static int startDebugRaid(CommandContext<CommandSourceStack> context) {
+        ServerLevel level = context.getSource().getLevel();
+        Human human = findNearest(level, context.getSource().getPosition(), 128).orElse(null);
+        if (human == null || human.getCampId() == null) {
+            context.getSource().sendFailure(Component.literal("No camp Human found."));
+            return 0;
+        }
+        Camp home = CampSavedData.get(level).get(human.getCampId());
+        Camp target = CampSavedData.get(level).nearby(level.dimension(), human.blockPosition(), 256).stream()
+                .filter(candidate -> !candidate.id().equals(home.id()) && candidate.faction() != home.faction())
+                .min(Comparator.comparingDouble(candidate -> candidate.center().distSqr(human.blockPosition()))).orElse(null);
+        if (target == null || !CampMissionController.forceRaid(human, target.id())) {
+            context.getSource().sendFailure(Component.literal("No nearby enemy camp could be raided."));
+            return 0;
+        }
+        context.getSource().sendSuccess(() -> Component.literal("Raid started against camp " + target.id()), false);
         return 1;
     }
 

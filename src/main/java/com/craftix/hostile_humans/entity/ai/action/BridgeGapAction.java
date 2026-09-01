@@ -22,7 +22,14 @@ public final class BridgeGapAction implements TacticalWorldAction {
         return action.canStart(context) && action.tick(context) == WorldActionResult.RUNNING;
     }
 
-    private Direction direction(Human human) {
+    private Direction direction(WorldActionContext context) {
+        Human human = context.human();
+        if (context.objective() != null) {
+            BlockPos target = context.objective();
+            return Math.abs(target.getX() - human.getBlockX()) >= Math.abs(target.getZ() - human.getBlockZ())
+                    ? (target.getX() >= human.getBlockX() ? Direction.EAST : Direction.WEST)
+                    : (target.getZ() >= human.getBlockZ() ? Direction.SOUTH : Direction.NORTH);
+        }
         LivingEntity target = human.getTarget();
         if (target == null) return Direction.NORTH;
         return Math.abs(target.getX() - human.getX()) >= Math.abs(target.getZ() - human.getZ())
@@ -38,7 +45,7 @@ public final class BridgeGapAction implements TacticalWorldAction {
     public boolean canStart(WorldActionContext context) {
         Human human = context.human();
         LivingEntity target = human.getTarget();
-        direction = direction(human);
+        direction = direction(context);
         if (!Config.enableBridging.get() || WorldActionSupport.critical(human) || target == null || !target.isAlive()
                 || !WorldActionSupport.permitted(human) || WorldActionSupport.constructionStack(human, true).isEmpty()
                 || !Config.allowBridgeOverLava.get() && (human.isInLava() || target.isInLava())) return false;

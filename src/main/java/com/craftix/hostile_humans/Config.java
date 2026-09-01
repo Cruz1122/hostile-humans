@@ -73,6 +73,19 @@ public class Config {
     public static ForgeConfigSpec.IntValue explorationRadius;
     public static ForgeConfigSpec.IntValue survivalPathBudgetPerTick;
     public static ForgeConfigSpec.IntValue survivalScanBudgetPerTick;
+    public static ForgeConfigSpec.BooleanValue enableCamps;
+    public static ForgeConfigSpec.DoubleValue campCreationChance;
+    public static ForgeConfigSpec.IntValue minCampSpacing;
+    public static ForgeConfigSpec.IntValue maxCampsPerDimension;
+    public static ForgeConfigSpec.BooleanValue campInitialLoot;
+    public static ForgeConfigSpec.BooleanValue enableExpeditions;
+    public static ForgeConfigSpec.IntValue expeditionMaxDistance;
+    public static ForgeConfigSpec.IntValue expeditionMaxDurationTicks;
+    public static ForgeConfigSpec.IntValue expeditionCooldownTicks;
+    public static ForgeConfigSpec.BooleanValue enableRaids;
+    public static ForgeConfigSpec.IntValue maxRaidDistance;
+    public static ForgeConfigSpec.IntValue raidCooldownTicks;
+    public static ForgeConfigSpec.IntValue failedRaidCooldownTicks;
     public static ForgeConfigSpec.BooleanValue enableNaturalHumanSpawning;
     public static ForgeConfigSpec.IntValue spawnAttemptIntervalTicks;
     public static ForgeConfigSpec.IntValue minSpawnDistance;
@@ -219,6 +232,28 @@ public class Config {
                 .defineInRange("survivalPathBudgetPerTick", 100, 10, 1000);
         survivalScanBudgetPerTick = SERVER_BUILDER.comment("Maximum full survival resource scans per dimension and tick")
                 .defineInRange("survivalScanBudgetPerTick", 50, 5, 500);
+        SERVER_BUILDER.pop();
+
+        SERVER_BUILDER.push("camps");
+        enableCamps = SERVER_BUILDER.define("enableCamps", true);
+        campCreationChance = SERVER_BUILDER.defineInRange("campCreationChance", 0.02D, 0.0D, 1.0D);
+        minCampSpacing = SERVER_BUILDER.defineInRange("minCampSpacing", 128, 16, 512);
+        maxCampsPerDimension = SERVER_BUILDER.defineInRange("maxCampsPerDimension", 32, 1, 256);
+        campInitialLoot = SERVER_BUILDER.define("campInitialLoot", true);
+        SERVER_BUILDER.pop();
+
+        SERVER_BUILDER.push("expeditions");
+        enableExpeditions = SERVER_BUILDER.define("enableExpeditions", true);
+        expeditionMaxDistance = SERVER_BUILDER.defineInRange("maxDistanceFromCamp", 128, 32, 256);
+        expeditionMaxDurationTicks = SERVER_BUILDER.defineInRange("maxDurationTicks", 3600, 200, 12000);
+        expeditionCooldownTicks = SERVER_BUILDER.defineInRange("expeditionCooldownTicks", 1200, 100, 12000);
+        SERVER_BUILDER.pop();
+
+        SERVER_BUILDER.push("raids");
+        enableRaids = SERVER_BUILDER.define("enableRaids", true);
+        maxRaidDistance = SERVER_BUILDER.defineInRange("maxRaidDistance", 192, 64, 512);
+        raidCooldownTicks = SERVER_BUILDER.defineInRange("raidCooldownTicks", 12000, 600, 72000);
+        failedRaidCooldownTicks = SERVER_BUILDER.defineInRange("failedRaidCooldownTicks", 18000, 600, 72000);
         SERVER_BUILDER.pop();
 
         SERVER_BUILDER.push("naturalSpawning");

@@ -208,16 +208,13 @@ public final class NaturalHumanSpawningGameTest {
         helper.succeed();
     }
 
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "naturalHumanSpawning", timeoutTicks = 40)
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "naturalHumanSpawningConfig", timeoutTicks = 40)
     public static void finalContextChancesKeepStructuresSpecial(GameTestHelper helper) {
-        helper.assertTrue(NaturalHumanSpawner.contextSpawnChance(SpawnContext.OVERWORLD_SURFACE)
-                        < NaturalHumanSpawner.contextSpawnChance(SpawnContext.OVERWORLD_STRUCTURE),
+        helper.assertTrue(Config.spawnSurfaceChance.getDefault() < Config.spawnStructureChance.getDefault(),
                 "Overworld structures did not receive a density bonus");
-        helper.assertTrue(NaturalHumanSpawner.contextSpawnChance(SpawnContext.NETHER_WILDS)
-                        < NaturalHumanSpawner.contextSpawnChance(SpawnContext.BASTION),
+        helper.assertTrue(Config.spawnNetherChance.getDefault() < Config.spawnFortressChance.getDefault(),
                 "Bastions did not receive a density bonus");
-        helper.assertTrue(NaturalHumanSpawner.contextSpawnChance(SpawnContext.END_WILDS)
-                        < NaturalHumanSpawner.contextSpawnChance(SpawnContext.END_CITY),
+        helper.assertTrue(Config.spawnEndChance.getDefault() < Config.spawnEndCityChance.getDefault(),
                 "End Cities did not receive a density bonus");
         helper.succeed();
     }

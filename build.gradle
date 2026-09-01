@@ -35,7 +35,10 @@ def gameTestClassesByScope = [
         survival       : ['HumanSurvivalProgressionGameTest'],
         worldprogression: ['WorldProgressionGameTest', 'NaturalHumanSpawningGameTest', 'NaturalHumanDimensionGameTest'],
         loadout        : ['HumanLoadoutGameTest'],
-        deathloot      : ['HumanDeathLootGameTest']
+        deathloot      : ['HumanDeathLootGameTest'],
+        camp           : ['HumanCampGameTest'],
+        expedition     : ['HumanExpeditionGameTest'],
+        raid           : ['HumanRaidGameTest']
 ]
 def requestedGameTestScopes = providers.gradleProperty('gameTestFilter').map { value ->
     value.split(',').collect { it.trim().toLowerCase(Locale.ROOT) }.findAll { !it.isEmpty() }

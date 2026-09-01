@@ -21,6 +21,7 @@ import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.alchemy.PotionUtils;
 import net.minecraft.world.item.alchemy.Potions;
+import net.minecraft.world.level.Level;
 import net.minecraft.server.level.ServerLevel;
 import com.craftix.hostile_humans.progression.WorldGearProgressionSnapshot;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -82,6 +83,7 @@ public final class HumanLoadoutGenerator {
         add(inventory, new ItemStack(foodFor(context, random), foodCount));
         if (random.nextDouble() < utilityChance(context)) addTaggedFallback(inventory, Items.COBWEB, SPAWN_UTILITY, 1 + random.nextInt(3), random);
         if (random.nextDouble() < pearlChance(context)) addTaggedFallback(inventory, Items.ENDER_PEARL, SPAWN_UTILITY, 1 + random.nextInt(4), random);
+        if (random.nextDouble() < waterBucketChance(context)) addTaggedFallback(inventory, Items.WATER_BUCKET, SPAWN_UTILITY, 1, random);
         if (random.nextDouble() < goldenAppleChance(context)) addTaggedFallback(inventory, Items.GOLDEN_APPLE, SPAWN_UTILITY, 1, random);
         if (random.nextDouble() < notchAppleChance(context)) addTaggedFallback(inventory, Items.ENCHANTED_GOLDEN_APPLE, SPAWN_UTILITY, 1, random);
         if (random.nextDouble() < totemChance(context)) addTaggedFallback(inventory, Items.TOTEM_OF_UNDYING, SPAWN_UTILITY, 1, random);
@@ -467,6 +469,11 @@ public final class HumanLoadoutGenerator {
         double base = isEnd(c.spawnContext()) ? Config.loadoutPearlEndChance.get() : 0.04D;
         if (c.progression().endVisited()) base += Config.loadoutPostEndPearlBoost.get();
         return clamp(base + tierStrength(c.tier()) * 0.08D);
+    }
+    private static double waterBucketChance(LoadoutRollContext c) {
+        if (c.dimension() == Level.NETHER) return 0.0D;
+        return clamp(Config.loadoutWaterBucketChance.get() + tierStrength(c.tier()) * 0.08D
+                + (isNether(c.spawnContext()) || isEnd(c.spawnContext()) ? 0.04D : 0.0D));
     }
     private static double goldenAppleChance(LoadoutRollContext c) { return clamp(0.04D + tierStrength(c.tier()) * 0.10D + c.ageFactor() * 0.08D + (isEnd(c.spawnContext()) ? 0.08D : 0.0D)); }
     private static double notchAppleChance(LoadoutRollContext c) { return clamp(0.002D + tierStrength(c.tier()) * 0.008D + c.ageFactor() * 0.006D + (c.spawnContext() == SpawnContext.END_CITY ? 0.012D : 0.0D)); }

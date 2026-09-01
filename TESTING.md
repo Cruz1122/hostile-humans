@@ -1,7 +1,7 @@
 # Testing
 
 Hostile Humans uses Forge GameTests on a dedicated server. The current source
-contains 182 `@GameTest` declarations in 13 domain scopes. Always trust the
+contains domain-scoped `@GameTest` declarations. Always trust the
 non-zero expected-test count printed by Forge for the effective run count.
 
 ## Fast feedback loop
@@ -17,6 +17,7 @@ Then run only the affected scopes in one server startup:
 ```bash
 ./gradlew runGameTestServer -PgameTestFilter=worldnavigation
 ./gradlew runGameTestServer -PgameTestFilter=persona,squad,shield
+./gradlew runGameTestServer -PgameTestFilter=utility
 ```
 
 Available scopes:
@@ -30,6 +31,7 @@ Available scopes:
 | `chestloot` | chest discovery, extraction, equipment, no-loss behavior |
 | `cobweb` | tactical cobweb placement and limits |
 | `shield` | combat tiers, shield state, weapon switching, critical damage |
+| `utility` | offensive/defensive ender pearls and water-bucket rescue/recovery |
 | `sound` | sound events, investigation, visible targeting |
 | `worldnavigation` | pillar, bridge, mining, controller integration |
 | `survival` | needs, resources, loot, crafting, hunting, furnace, sharing |
@@ -45,6 +47,7 @@ Unknown scopes fail during Gradle configuration. Always confirm that the GameTes
 
 - `entity/ai/survival/**` and survival recipes: `survival`.
 - `entity/ai/action/**`: `worldnavigation`; add `cobweb` for cobweb/shared placement changes.
+- `EnderPearlAction`, `WaterBucketAction`, `TacticalUtilityController`: `utility`; run the full suite because `Human` integration and configuration are shared.
 - `entity/ai/squad/**` and squad goals: `squad`.
 - `entity/ai/combat/**`, `MeleeAttackGoal`, shields: `shield`.
 - `InvestigateSoundGoal` and game-event handling: `sound`.

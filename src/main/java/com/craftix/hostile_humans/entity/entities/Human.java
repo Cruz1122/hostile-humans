@@ -8,6 +8,7 @@ import com.craftix.hostile_humans.entity.PotionRangedAttackMob;
 import com.craftix.hostile_humans.entity.ai.control.HumanEntityWalkControl;
 import com.craftix.hostile_humans.entity.ai.goal.*;
 import com.craftix.hostile_humans.entity.ai.action.PlaceCobwebAction;
+import com.craftix.hostile_humans.entity.ai.action.TacticalUtilityController;
 import com.craftix.hostile_humans.entity.ai.action.TacticalWorldActionController;
 import com.craftix.hostile_humans.entity.ai.combat.CombatAction;
 import com.craftix.hostile_humans.entity.ai.combat.CombatIntent;
@@ -144,6 +145,8 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     public int meleeFlurryDamageTicks;
     public int cobwebCooldown;
     public int cobwebsPlacedThisCombat;
+    public int enderPearlCooldown;
+    public int waterRecoveryCooldown;
     private boolean equipmentDirty = true;
     private boolean equipmentReevaluationQueued;
     private int miningToolLockTicks;
@@ -155,6 +158,9 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     private UUID shieldDisablerTarget;
     private final CombatTacticsController combatTacticsController = new CombatTacticsController(this);
     private final TacticalWorldActionController tacticalWorldActionController = new TacticalWorldActionController(this);
+    private final TacticalUtilityController tacticalUtilityController = new TacticalUtilityController(this);
+    @Nullable
+    private BlockPos placedWaterSourcePos;
     private SurvivalProgressionGoal survivalProgressionGoal;
     private CombatIntent combatIntent = CombatIntent.idle(com.craftix.hostile_humans.entity.ai.combat.ShieldState.UNAVAILABLE);
     @Nullable
@@ -557,15 +563,17 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             goalSelector.removeGoal(tridentGoal);
 
             ItemStack itemstack = getItemInHand(ProjectileUtil.getWeaponHoldingHand(this, this::canFireProjectileWeapon));
+            boolean holdingUnavailableRanged = HumanUtil.isRangedWeapon(getMainHandItem())
+                    && !hasProjectileForWeapon(getMainHandItem());
             if (getMainHandItem().getItem() instanceof TridentItem) {
                 goalSelector.addGoal(2, tridentGoal);
                 goalSelector.addGoal(3, meleeAttackGoal);
-            } else if (itemstack.getItem() instanceof CrossbowItem) {
+            } else if (!holdingUnavailableRanged && itemstack.getItem() instanceof CrossbowItem) {
                 goalSelector.addGoal(2, crossbowAttackGoal);
-            } else if (itemstack.getItem() instanceof BowItem) {
+            } else if (!holdingUnavailableRanged && itemstack.getItem() instanceof BowItem) {
                 bowAttackGoal.setMinAttackInterval(40);
                 goalSelector.addGoal(2, bowAttackGoal);
-            } else {
+            } else if (!holdingUnavailableRanged) {
                 goalSelector.addGoal(2, meleeAttackGoal);
             }
         }
@@ -594,7 +602,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             return false;
         }
 
-        boolean critical = this.criticalStrikeReady
+        boolean critical = this.criticalStrikeReady && isDescendingForCritical()
                 && entityIn instanceof LivingEntity target && !target.isBlocking();
         AttributeInstance attackDamage = this.getAttribute(Attributes.ATTACK_DAMAGE);
         if (critical && attackDamage != null) {
@@ -626,6 +634,11 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
         swing(InteractionHand.MAIN_HAND);
         return result;
+    }
+
+    /** A critical hit is valid only while the entity is physically descending. */
+    public boolean isDescendingForCritical() {
+        return !onGround() && getDeltaMovement().y < 0.0D && fallDistance > 0.0F;
     }
 
     @Override
@@ -752,6 +765,13 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         compound.putInt("InvestigateSoundZ", this.investigateSound.getZ());
         compound.putInt("CobwebCooldown", this.cobwebCooldown);
         compound.putInt("CobwebsPlacedThisCombat", this.cobwebsPlacedThisCombat);
+        compound.putInt("EnderPearlCooldown", this.enderPearlCooldown);
+        compound.putInt("WaterRecoveryCooldown", this.waterRecoveryCooldown);
+        if (this.placedWaterSourcePos != null) {
+            compound.putInt("WaterSourceX", this.placedWaterSourcePos.getX());
+            compound.putInt("WaterSourceY", this.placedWaterSourcePos.getY());
+            compound.putInt("WaterSourceZ", this.placedWaterSourcePos.getZ());
+        }
         if (this.lastLootedChestPos != null) {
             compound.putInt("LastLootedChestX", this.lastLootedChestPos.getX());
             compound.putInt("LastLootedChestY", this.lastLootedChestPos.getY());
@@ -779,6 +799,11 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
                 compound.getInt("InvestigateSoundZ"));
         this.cobwebCooldown = Math.max(0, compound.getInt("CobwebCooldown"));
         this.cobwebsPlacedThisCombat = Math.max(0, compound.getInt("CobwebsPlacedThisCombat"));
+        this.enderPearlCooldown = Math.max(0, compound.getInt("EnderPearlCooldown"));
+        this.waterRecoveryCooldown = Math.max(0, compound.getInt("WaterRecoveryCooldown"));
+        this.placedWaterSourcePos = compound.contains("WaterSourceX")
+                ? new BlockPos(compound.getInt("WaterSourceX"), compound.getInt("WaterSourceY"), compound.getInt("WaterSourceZ"))
+                : null;
         if (compound.contains("LastLootedChestTick")) {
             this.lastLootedChestPos = new BlockPos(compound.getInt("LastLootedChestX"), compound.getInt("LastLootedChestY"), compound.getInt("LastLootedChestZ"));
             this.lastLootedChestTick = compound.getLong("LastLootedChestTick");
@@ -1395,6 +1420,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             this.getNavigation().stop();
         }
         if (!this.level().isClientSide) {
+            this.tacticalUtilityController.tick();
             this.tacticalWorldActionController.tick();
             LivingEntity squadTarget = this.getTarget();
             if (squadTarget != null && this.tickCount >= this.nextSquadVisionShareTick
@@ -1768,6 +1794,13 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         if (shieldDisablerSwapSlot >= 0) return;
 
         ItemStack handItem = getMainHandItem();
+        if (HumanUtil.isRangedWeapon(handItem) && !hasProjectileForWeapon(handItem)) {
+            // Do not leave a natural Human locked into a ranged goal that can no
+            // longer fire. Reconcile the hand and combat goal in one server tick.
+            reevaluateEquipment();
+            setCombatTask();
+            return;
+        }
         if (equipmentDirty) {
             if (HumanUtil.isRangedWeapon(handItem)) {
                 // A deliberate/spawned ranged weapon is valid equipment; the melee selector
@@ -1848,8 +1881,11 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             MobType targetType = getTarget() == null ? MobType.UNDEFINED : getTarget().getMobType();
             if (MeleeWeaponSelector.equipBest(this, targetType)) {
                 switchingWeaponCoolDown = Math.max(switchingWeaponCoolDown, 20);
-                setCombatTask();
             }
+            // Ranged weapons are valid current equipment too. Rebuild the combat
+            // goal after every reevaluation so a newly equipped bow/crossbow is
+            // not left visible in hand without its attack goal registered.
+            setCombatTask();
             equipmentDirty = false;
         } finally {
             evaluatingEquipment = false;
@@ -1866,6 +1902,23 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     public TacticalWorldActionController getTacticalWorldActionController() {
         return tacticalWorldActionController;
+    }
+
+    public TacticalUtilityController getTacticalUtilityController() {
+        return tacticalUtilityController;
+    }
+
+    @Nullable
+    public BlockPos getWaterSourcePos() {
+        return placedWaterSourcePos;
+    }
+
+    public void setWaterSourcePos(BlockPos pos) {
+        this.placedWaterSourcePos = pos == null ? null : pos.immutable();
+    }
+
+    public void clearWaterSourcePos() {
+        this.placedWaterSourcePos = null;
     }
 
     public SurvivalSnapshot getSurvivalSnapshot() {
@@ -1915,6 +1968,8 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         }
         if (this.switchingWeaponCoolDown > 0) --this.switchingWeaponCoolDown;
         if (this.cobwebCooldown > 0) --this.cobwebCooldown;
+        if (this.enderPearlCooldown > 0) --this.enderPearlCooldown;
+        if (this.waterRecoveryCooldown > 0) --this.waterRecoveryCooldown;
         if (this.consecutiveReceivedCombatHits > 0
                 && this.tickCount - this.lastReceivedCombatHitTick > 20) {
             this.consecutiveReceivedCombatHits = 0;

@@ -11,6 +11,7 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -49,6 +50,27 @@ public final class HumanEquipmentGameTest {
         human.getData().setInventoryItem(0, new ItemStack(Items.IRON_PICKAXE));
         human.reevaluateEquipment();
         helper.assertTrue(human.getMainHandItem().is(Items.IRON_PICKAXE), "Fallback pickaxe was not equipped");
+        helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalEquipment", timeoutTicks = 80)
+    public static void naturalRangedHumanFallsBackToMeleeWithoutAmmunition(GameTestHelper helper) {
+        Human human = createHuman(helper, new BlockPos(2, 1, 2));
+        human.finalizeSpawn(helper.getLevel(), helper.getLevel().getCurrentDifficultyAt(human.blockPosition()),
+                MobSpawnType.NATURAL, null, null);
+        for (int slot = 0; slot < human.getData().getInventoryItemsSize(); slot++) {
+            human.getData().setInventoryItem(slot, ItemStack.EMPTY);
+        }
+        human.getData().setInventoryItem(0, new ItemStack(Items.IRON_SWORD));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.BOW));
+        human.switchingWeaponCoolDown = 0;
+
+        helper.assertTrue(!human.hasProjectileForWeapon(human.getMainHandItem()),
+                "Natural ranged fixture unexpectedly had ammunition");
+        human.updateCombatWeaponSelection();
+
+        helper.assertTrue(human.getMainHandItem().is(Items.IRON_SWORD),
+                "Natural Human kept an unusable ranged weapon instead of selecting melee");
         helper.succeed();
     }
 

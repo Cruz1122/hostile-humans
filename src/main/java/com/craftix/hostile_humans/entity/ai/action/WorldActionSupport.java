@@ -72,6 +72,6 @@ public final class WorldActionSupport {
     public static boolean critical(Human human) {
         return human.isFleeing || human.healingAfterFleeTicks > 0 || human.isUsingItem()
                 || human.isSleepingOrLyingDown() || human.isInLava() || human.isFallFlying()
-                || human.isPassenger() || human.isSwimming();
+                || human.isPassenger() || human.isSwimming() || human.isOnFire();
     }
 }

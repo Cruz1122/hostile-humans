@@ -95,6 +95,9 @@ Manual scenarios:
 
 - `function hostile_humans:debug/all_tactical_equipment` creates one arena with
   all four stations below. It is the recommended manual smoke test.
+- `function hostile_humans:debug/tactical_utility_arena` creates the in-game
+  ender-pearl and water-bucket observation arena documented in
+  `tactical-utility-debug-workflow.md`.
 - `function hostile_humans:debug/weapon_primary`
 - `function hostile_humans:debug/weapon_fallback`
 - `function hostile_humans:debug/weapon_upgrade`

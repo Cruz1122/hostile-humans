@@ -117,7 +117,6 @@ public class MeleeAttackGoal extends HumanGoal {
 
     @Override
     public void stop() {
-        this.mob.setTarget(null);
         this.mob.setAggressive(false);
 
         boolean isSit = mob.isOrderedToSit();
@@ -185,6 +184,9 @@ public class MeleeAttackGoal extends HumanGoal {
 
     protected void checkAndPerformAttack(LivingEntity livingEntity, double attackDistance) {
         double distance = this.getAttackReachSqr(livingEntity);
+        if (this.mob instanceof Human human && HumanUtil.isRangedWeapon(human.getMainHandItem())) {
+            return;
+        }
         boolean preparingBuff = this.mob instanceof Human human && human.isPreparingPreAttackBuff();
         boolean lyingDown = this.mob instanceof Human human && human.isSleepingOrLyingDown();
         double extendedSwingRange = distance * 1.35D;
@@ -207,7 +209,8 @@ public class MeleeAttackGoal extends HumanGoal {
             if (human.criticalAttackArmedUntilTick > 0) {
                 if (human.tickCount > human.criticalAttackArmedUntilTick) {
                     human.criticalAttackArmedUntilTick = 0;
-                } else if (!human.onGround() && human.fallDistance > 0.0F) {
+                } else if (!human.onGround() && human.getDeltaMovement().y < 0.0D
+                        && human.fallDistance > 0.0F) {
                     human.criticalStrikeReady = true;
                     human.criticalAttackArmedUntilTick = 0;
                 } else if (human.onGround()
@@ -283,12 +286,15 @@ public class MeleeAttackGoal extends HumanGoal {
     }
 
     private boolean hasMeleeSlot(LivingEntity target) {
-        if (!(this.mob instanceof Human human) || !(target instanceof Player)) {
+        if (!(this.mob instanceof Human human)) {
             return true;
         }
-        if (!MeleeWeaponSelector.isMeleeCandidate(human.getMainHandItem()) && !HumanUtil.isTrident(human.getMainHandItem())) {
-            return true;
+        if (HumanUtil.isRangedWeapon(human.getMainHandItem())) {
+            return false;
         }
+        if (!(target instanceof Player)) return true;
+        if (!MeleeWeaponSelector.isMeleeCandidate(human.getMainHandItem())
+                && !HumanUtil.isTrident(human.getMainHandItem())) return true;
 
         int maxMelee = Config.maxTargeting.get();
         if (maxMelee <= 0) {

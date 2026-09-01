@@ -42,6 +42,12 @@ public class Config {
     public static ForgeConfigSpec.BooleanValue enableShieldTactics;
     public static ForgeConfigSpec.BooleanValue enableProjectileBlocking;
     public static ForgeConfigSpec.BooleanValue enableShieldBreaking;
+    public static ForgeConfigSpec.BooleanValue enableEnderPearlTactics;
+    public static ForgeConfigSpec.IntValue enderPearlCooldownTicks;
+    public static ForgeConfigSpec.DoubleValue enderPearlOffensiveDistance;
+    public static ForgeConfigSpec.DoubleValue enderPearlMaximumDistance;
+    public static ForgeConfigSpec.BooleanValue enableWaterBucketTactics;
+    public static ForgeConfigSpec.IntValue waterRecoveryDelayTicks;
     public static ForgeConfigSpec.BooleanValue enablePillaring;
     public static ForgeConfigSpec.BooleanValue enableBridging;
     public static ForgeConfigSpec.BooleanValue enableNavigationMining;
@@ -98,6 +104,7 @@ public class Config {
     public static ForgeConfigSpec.DoubleValue loadoutPostEndDiamondBoost;
     public static ForgeConfigSpec.DoubleValue loadoutPearlEndChance;
     public static ForgeConfigSpec.DoubleValue loadoutPostEndPearlBoost;
+    public static ForgeConfigSpec.DoubleValue loadoutWaterBucketChance;
     public static ForgeConfigSpec.DoubleValue loadoutTotemEndChance;
     public static ForgeConfigSpec.DoubleValue loadoutPostEndTotemBoost;
     public static ForgeConfigSpec.DoubleValue loadoutShieldOverworldChance;
@@ -155,6 +162,18 @@ public class Config {
                 .define("enableProjectileBlocking", true);
         enableShieldBreaking = SERVER_BUILDER.comment("Allow tactical switching to weapons that can disable visible shields")
                 .define("enableShieldBreaking", true);
+        enableEnderPearlTactics = SERVER_BUILDER.comment("Allow Humans to use ender pearls for offensive and defensive repositioning")
+                .define("enableEnderPearlTactics", true);
+        enderPearlCooldownTicks = SERVER_BUILDER.comment("Cooldown between tactical ender pearl throws")
+                .defineInRange("enderPearlCooldownTicks", 100, 20, 600);
+        enderPearlOffensiveDistance = SERVER_BUILDER.comment("Minimum target distance for an offensive ender pearl")
+                .defineInRange("enderPearlOffensiveDistance", 10.0D, 4.0D, 32.0D);
+        enderPearlMaximumDistance = SERVER_BUILDER.comment("Maximum target distance for an offensive ender pearl")
+                .defineInRange("enderPearlMaximumDistance", 28.0D, 8.0D, 64.0D);
+        enableWaterBucketTactics = SERVER_BUILDER.comment("Allow Humans to place and recover water with buckets")
+                .define("enableWaterBucketTactics", true);
+        waterRecoveryDelayTicks = SERVER_BUILDER.comment("Ticks before a tactical water source may be recovered")
+                .defineInRange("waterRecoveryDelayTicks", 40, 10, 600);
         SERVER_BUILDER.pop();
 
         SERVER_BUILDER.push("chestLooting");
@@ -268,6 +287,8 @@ public class Config {
                 .defineInRange("pearlEndChance", 0.26D, 0.0D, 1.0D);
         loadoutPostEndPearlBoost = SERVER_BUILDER.comment("Additional Ender Pearl chance after the End has been visited")
                 .defineInRange("postEndPearlBoost", 0.16D, 0.0D, 1.0D);
+        loadoutWaterBucketChance = SERVER_BUILDER.comment("Base water bucket chance in natural Human loadouts")
+                .defineInRange("waterBucketChance", 0.12D, 0.0D, 1.0D);
         loadoutTotemEndChance = SERVER_BUILDER.comment("Totem chance in End contexts")
                 .defineInRange("totemEndChance", 0.018D, 0.0D, 1.0D);
         loadoutPostEndTotemBoost = SERVER_BUILDER.comment("Additional Totem chance after the End has been visited")

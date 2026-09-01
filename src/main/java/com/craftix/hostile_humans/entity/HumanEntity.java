@@ -272,6 +272,7 @@ public class HumanEntity extends HumanMobEntityData {
 
     @Override
     public void die(DamageSource damageSource) {
+        if (this instanceof Human human) human.cacheDeathExperienceReward();
         super.die(damageSource);
 
         clearFire();

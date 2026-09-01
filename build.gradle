@@ -29,6 +29,7 @@ def gameTestClassesByScope = [
         chestloot      : ['HumanChestLootGameTest'],
         cobweb         : ['HumanCobwebGameTest'],
         shield         : ['HumanShieldGameTest'],
+        utility        : ['HumanUtilityGameTest'],
         sound          : ['HumanSoundGameTest', 'HumanSmokeGameTest'],
         worldnavigation: ['HumanWorldNavigationGameTest'],
         survival       : ['HumanSurvivalProgressionGameTest'],

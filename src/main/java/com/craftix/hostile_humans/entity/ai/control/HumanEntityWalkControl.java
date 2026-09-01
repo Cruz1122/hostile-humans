@@ -173,22 +173,25 @@ public class HumanEntityWalkControl extends MoveControl {
     }
 
     private boolean tryRunJump(LivingEntity target) {
-        if (!Config.runJump.get() || target == null || this.human.isFleeing
-                || this.human.healingAfterFleeTicks > 0
+        boolean fleeing = this.human.isFleeing;
+        if (!Config.runJump.get() || this.human.healingAfterFleeTicks > 0
                 || !this.mob.onGround()
                 || !this.mob.isSprinting()
-                || this.human.onPlayerJumpCoolDown > 0
+                || this.human.onPlayerJumpCoolDown > 0) {
+            return false;
+        }
+        if (!fleeing && (target == null
                 || target.distanceTo(this.human) < 7.0F
                 || target.distanceTo(this.human) > 14.0F
                 || Math.abs(target.getY() - this.human.getY()) > 2.5D
                 || this.human.isHolding(HumanUtil::isRangedWeapon)
                 || HumanUtil.isTrident(this.human.getMainHandItem())
-                || !this.human.getSensing().hasLineOfSight(target)) {
+                || !this.human.getSensing().hasLineOfSight(target))) {
             return false;
         }
 
-        double dx = target.getX() - this.mob.getX();
-        double dz = target.getZ() - this.mob.getZ();
+        double dx = (target == null ? this.wantedX : target.getX()) - this.mob.getX();
+        double dz = (target == null ? this.wantedZ : target.getZ()) - this.mob.getZ();
         double horizontalLength = Math.sqrt(dx * dx + dz * dz);
         if (horizontalLength < 1.0E-4D) {
             return false;
@@ -209,15 +212,15 @@ public class HumanEntityWalkControl extends MoveControl {
 
     private void updateSprintState() {
         LivingEntity target = this.human.getTarget();
+        boolean fleeing = this.human.isFleeing;
         boolean shouldSprint = Config.runJump.get()
-                && target != null
-                && !this.human.isFleeing
                 && this.human.healingAfterFleeTicks <= 0
                 && !this.human.isUsingItem()
+                && !this.human.getNavigation().isDone()
+                && (fleeing || (target != null
                 && !this.human.isHolding(HumanUtil::isRangedWeapon)
                 && !HumanUtil.isTrident(this.human.getMainHandItem())
-                && this.human.distanceTo(target) >= 7.0F
-                && !this.human.getNavigation().isDone();
+                && this.human.distanceTo(target) >= 7.0F));
         this.human.setSprinting(shouldSprint);
     }
 }

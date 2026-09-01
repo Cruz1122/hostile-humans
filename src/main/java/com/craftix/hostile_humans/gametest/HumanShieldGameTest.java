@@ -19,6 +19,7 @@ import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.AABB;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
 
@@ -86,6 +87,21 @@ public final class HumanShieldGameTest {
         human.lastReceivedCombatHitTick = 99;
         helper.assertTrue(human.isUnderMeleePressure(),
                 "A hit from the previous tick was not treated as melee pressure");
+        helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 60)
+    public static void retaliationSurvivesMeleeGoalTransition(GameTestHelper helper) {
+        Human human = createHuman(helper);
+        Zombie attacker = createZombie(helper, new BlockPos(4, 1, 2));
+
+        human.hurt(helper.getLevel().damageSources().mobAttack(attacker), 1.0F);
+        helper.assertTrue(human.getTarget() == attacker,
+                "A valid attacker was not selected for immediate retaliation");
+
+        new MeleeAttackGoal(human, 1.0D, true).stop();
+        helper.assertTrue(human.getTarget() == attacker,
+                "Stopping a temporary melee goal cleared the retaliation target");
         helper.succeed();
     }
 
@@ -231,16 +247,36 @@ public final class HumanShieldGameTest {
             normalDamage = normalTarget.getMaxHealth() - normalTarget.getHealth();
         }
         float criticalDamage = 0.0F;
+        float ascendingDamage = 0.0F;
+        for (int attempt = 0; attempt < 40 && ascendingDamage <= 0.0F; attempt++) {
+            criticalTarget.setHealth(criticalTarget.getMaxHealth());
+            criticalTarget.invulnerableTime = 0;
+            human.criticalStrikeReady = true;
+            human.setOnGround(false);
+            human.setDeltaMovement(0.0D, 0.1D, 0.0D);
+            human.fallDistance = 1.0F;
+            helper.assertTrue(!human.isDescendingForCritical(),
+                    "Ascending critical fixture was incorrectly considered descending");
+            human.doHurtTarget(criticalTarget);
+            ascendingDamage = criticalTarget.getMaxHealth() - criticalTarget.getHealth();
+        }
         for (int attempt = 0; attempt < 40 && criticalDamage <= 0.0F; attempt++) {
             criticalTarget.setHealth(criticalTarget.getMaxHealth());
             criticalTarget.invulnerableTime = 0;
             human.criticalStrikeReady = true;
+            human.setOnGround(false);
+            human.setDeltaMovement(0.0D, -0.1D, 0.0D);
+            human.fallDistance = 1.0F;
+            helper.assertTrue(human.isDescendingForCritical(),
+                    "Critical fixture was not descending before the critical attack");
             human.doHurtTarget(criticalTarget);
             criticalDamage = criticalTarget.getMaxHealth() - criticalTarget.getHealth();
         }
 
         helper.assertTrue(criticalDamage > normalDamage,
                 "Critical strike did not amplify the single melee hit");
+        helper.assertTrue(ascendingDamage <= normalDamage,
+                "Ascending attack received critical damage before the descent");
         helper.assertTrue(!human.criticalStrikeReady,
                 "Critical strike state was not consumed after attacking");
         helper.succeed();
@@ -267,6 +303,48 @@ public final class HumanShieldGameTest {
                             "Human targeted the hostile mob but never attacked it");
                     helper.succeed();
         });
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 140)
+    public static void rangedWeaponsActuallyFire(GameTestHelper helper) {
+        Human human = createHuman(helper);
+        helper.getLevel().getEntitiesOfClass(Mob.class, human.getBoundingBox().inflate(12.0D), entity -> entity != human)
+                .forEach(Entity::discard);
+        Zombie target = createZombie(helper, new BlockPos(10, 1, 2));
+        human.setNoAi(false);
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.BOW));
+        human.getData().setInventoryItem(0, new ItemStack(Items.ARROW, 8));
+        human.setTarget(target);
+        float initialHealth = target.getHealth();
+
+        helper.startSequence()
+                .thenIdle(80)
+                .thenExecute(() -> {
+                    boolean fired = target.getHealth() < initialHealth
+                            || !helper.getLevel().getEntitiesOfClass(net.minecraft.world.entity.projectile.AbstractArrow.class,
+                            new AABB(human.blockPosition()).inflate(16.0D)).isEmpty();
+                    helper.assertTrue(fired, "Human equipped a bow but never fired an arrow");
+                    helper.succeed();
+        });
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 180)
+    public static void crossbowsActuallyFire(GameTestHelper helper) {
+        Human human = createHuman(helper);
+        helper.getLevel().getEntitiesOfClass(Mob.class, human.getBoundingBox().inflate(12.0D), entity -> entity != human)
+                .forEach(Entity::discard);
+        Zombie target = createZombie(helper, new BlockPos(10, 1, 2));
+        human.setNoAi(false);
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.CROSSBOW));
+        human.getData().setInventoryItem(0, new ItemStack(Items.ARROW, 8));
+        human.setTarget(target);
+        float initialHealth = target.getHealth();
+
+        helper.startSequence()
+                .thenIdle(120)
+                .thenExecute(() -> helper.assertTrue(target.getHealth() < initialHealth,
+                        "Human equipped a crossbow but never fired a bolt"))
+                .thenExecute(helper::succeed);
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 40)

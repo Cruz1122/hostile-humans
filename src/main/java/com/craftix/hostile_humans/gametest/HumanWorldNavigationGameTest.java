@@ -278,6 +278,21 @@ public final class HumanWorldNavigationGameTest {
                 });
     }
 
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "worldNavigation", timeoutTicks = 100)
+    public static void meleeRunnerUsesPlayerLikeJump(GameTestHelper helper) {
+        Setup setup = liveSetup(helper, new BlockPos(1, 1, 2), new BlockPos(8, 1, 2));
+        helper.setBlock(new BlockPos(8, 0, 2), Blocks.STONE.defaultBlockState());
+        setup.human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
+        setup.human.setTarget(setup.target);
+        setup.human.setCombatTask();
+
+        helper.startSequence().thenIdle(30).thenExecute(() -> {
+            helper.assertTrue(setup.human.onPlayerJumpCoolDown > 0,
+                    "A melee Human running toward a mid-range target never performed a run jump");
+            helper.succeed();
+        });
+    }
+
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "worldNavigationPillarIntegration", timeoutTicks = 140)
     public static void controllerPillarsAtUnreachableRaisedTarget(GameTestHelper helper) {
         Setup setup = liveSetup(helper, new BlockPos(2, 1, 2), new BlockPos(5, 4, 2));

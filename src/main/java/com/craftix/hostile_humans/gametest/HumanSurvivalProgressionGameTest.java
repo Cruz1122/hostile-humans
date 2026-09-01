@@ -720,15 +720,24 @@ public final class HumanSurvivalProgressionGameTest {
                         .filter(tree::contains).isPresent(),
                 "Wood integration fixture did not expose its tree to the survival scanner");
         human.targetSelector.removeAllGoals(goal -> true);
-        human.goalSelector.removeAllGoals(goal -> !(goal instanceof InvestigateSoundGoal));
+        // This fixture only exercises survival progression. Nearby GameTest
+        // arenas can emit block-break events, so sound investigation would
+        // otherwise preempt the tree-harvesting action nondeterministically.
+        human.goalSelector.removeAllGoals(goal -> true);
         human.goalSelector.addGoal(6, new ItemLootGoal(human, 1.0D));
         SurvivalProgressionGoal progressionGoal = new SurvivalProgressionGoal(human);
         human.goalSelector.addGoal(5, progressionGoal);
         human.setNoAi(false);
 
         helper.startSequence()
-                .thenExecuteFor(20, () -> human.setOnGround(true))
-                .thenExecuteFor(700, () -> human.setOnGround(true))
+                .thenExecuteFor(20, () -> {
+                    human.setInvestigateSound(BlockPos.ZERO);
+                    human.setOnGround(true);
+                })
+                .thenExecuteFor(700, () -> {
+                    human.setInvestigateSound(BlockPos.ZERO);
+                    human.setOnGround(true);
+                })
                 .thenExecute(() -> {
             long remainingLogs = tree.stream()
                     .filter(pos -> helper.getLevel().getBlockState(pos).is(Blocks.OAK_LOG))
@@ -1498,6 +1507,12 @@ public final class HumanSurvivalProgressionGameTest {
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalAnimalProgression", timeoutTicks = 360)
     public static void huntingCollectsVanillaMeatAndResumesProgression(GameTestHelper helper) {
         Human human = human(helper, new BlockPos(2, 1, 2));
+        // Other GameTest fixtures may run in adjacent templates. Keep this
+        // progression-only fixture from acquiring their hostile targets.
+        human.targetSelector.removeAllGoals(goal -> true);
+        human.goalSelector.removeAllGoals(goal -> true);
+        human.setTarget(null);
+        human.clearSquadThreatMemory();
         human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
         human.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
         human.getData().setInventoryItem(20, new ItemStack(Items.STONE_PICKAXE));
@@ -1556,7 +1571,11 @@ public final class HumanSurvivalProgressionGameTest {
                             "Progression did not select a new resource after collecting animal meat");
                     progressionGoal.start();
                 })
-                .thenExecuteFor(100, progressionGoal::tick)
+                .thenExecuteFor(100, () -> {
+                    human.setInvestigateSound(BlockPos.ZERO);
+                    human.clearSquadThreatMemory();
+                    progressionGoal.tick();
+                })
                 .thenExecute(() -> {
                     try {
                         helper.assertTrue(!helper.getLevel().getBlockState(nextResource).is(Blocks.OAK_LOG),

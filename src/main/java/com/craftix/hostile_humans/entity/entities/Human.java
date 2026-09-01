@@ -164,6 +164,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     private UUID squadId;
     private SpawnContext spawnContext = SpawnContext.UNKNOWN;
     private boolean naturalSpawnLoadout;
+    private int experiencePoints;
     private int cachedDeathExperienceReward;
     private boolean deathExperienceRewardCached;
     @Nullable
@@ -532,13 +533,19 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         targetSelector.addGoal(2, new NearestAttackableTargetGoalCustom<>(this, LivingEntity.class, 13, true, false,
                 target -> !(target instanceof Player) && this.isAngryAt(target)));
         targetSelector.addGoal(1, new NearestAttackableTargetGoalWithHumanLimiter<>(this, Player.class, true));
-        targetSelector.addGoal(4, new NearestAttackableTargetGoal<>(this, Mob.class, 5, false, false, (target) -> {
-        	if (target instanceof EnderMan) return false;
-            if (this.getTier() == HumanTier.ROAMER) {
-                return target instanceof Animal && !(target instanceof Bee) && String.valueOf(target.getId()).hashCode() % 100 < 30; //only attack 30% of animals
-            }
-            return target instanceof Enemy && (!(target instanceof Creeper) || HumanUtil.shouldFightCreeper(this));
-        }));
+        targetSelector.addGoal(4, new NearestAttackableTargetGoal<>(this, Mob.class, 5, false, false, this::shouldTargetMob));
+    }
+
+    /** Returns whether the combat target selector should consider this mob type. */
+    public boolean shouldTargetMob(LivingEntity target) {
+        if (target instanceof EnderMan) return false;
+        if (target instanceof Enemy) {
+            return !(target instanceof Creeper) || HumanUtil.shouldFightCreeper(this);
+        }
+        return this.getTier() == HumanTier.ROAMER
+                && target instanceof Animal
+                && !(target instanceof Bee)
+                && String.valueOf(target.getId()).hashCode() % 100 < 30; // only attack 30% of animals
     }
 
     public void setCombatTask() {
@@ -754,6 +761,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         if (this.combatSkillTierOverride != null) compound.putInt("CombatSkillTier", this.combatSkillTierOverride.ordinal() + 1);
         if (this.squadId != null) compound.putUUID("SquadId", this.squadId);
         if (this.spawnContext != SpawnContext.UNKNOWN) compound.putString("SpawnContext", this.spawnContext.name());
+        compound.putInt("ExperiencePoints", this.experiencePoints);
     }
 
     @Override
@@ -779,6 +787,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         this.combatSkillTierOverride = savedCombatTier >= 1 && savedCombatTier <= CombatSkillTier.values().length
                 ? CombatSkillTier.values()[savedCombatTier - 1] : null;
         this.squadId = compound.hasUUID("SquadId") ? compound.getUUID("SquadId") : null;
+        this.experiencePoints = Math.max(0, compound.getInt("ExperiencePoints"));
         if (compound.contains("SpawnContext")) {
             try {
                 this.spawnContext = SpawnContext.valueOf(compound.getString("SpawnContext"));
@@ -874,6 +883,37 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     public SpawnContext getSpawnContext() {
         return spawnContext;
+    }
+
+    public int getExperiencePoints() {
+        return experiencePoints;
+    }
+
+    public int giveExperiencePoints(int amount) {
+        if (amount <= 0) return 0;
+        int previous = experiencePoints;
+        experiencePoints = (int) Math.min(Integer.MAX_VALUE, (long) experiencePoints + amount);
+        return experiencePoints - previous;
+    }
+
+    public int getExperienceLevel() {
+        int level = 0;
+        while (level < 10_000 && experiencePoints >= experienceForLevel(level + 1)) level++;
+        return level;
+    }
+
+    public float getExperienceProgress() {
+        int level = getExperienceLevel();
+        int levelStart = experienceForLevel(level);
+        int levelEnd = experienceForLevel(level + 1);
+        return levelEnd == levelStart ? 0.0F
+                : (experiencePoints - levelStart) / (float) (levelEnd - levelStart);
+    }
+
+    private static int experienceForLevel(int level) {
+        if (level <= 16) return level * level + 6 * level;
+        if (level <= 31) return (int) (2.5D * level * level - 40.5D * level + 360.0D);
+        return (int) (4.5D * level * level - 162.5D * level + 2220.0D);
     }
 
     public void setSpawnContext(SpawnContext spawnContext) {

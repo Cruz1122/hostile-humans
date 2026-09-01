@@ -1,5 +1,6 @@
 package com.craftix.hostile_humans.gametest;
 
+import com.craftix.hostile_humans.entity.spawner.NaturalSpawnSavedData;
 import com.craftix.hostile_humans.progression.WorldGearProgressionSavedData;
 import com.craftix.hostile_humans.progression.WorldGearProgressionTracker;
 import net.minecraft.gametest.framework.GameTest;
@@ -101,6 +102,18 @@ public final class WorldProgressionGameTest {
         data.markEndVisited();
         WorldGearProgressionSavedData restored = WorldGearProgressionSavedData.load(data.save(new CompoundTag()));
         helper.assertTrue(restored.hasVisitedEnd(), "End visit milestone did not survive serialization");
+        helper.succeed();
+    }
+
+    @GameTest(template = "human_smoke", templateNamespace = "hostile_humans", batch = "worldProgression", timeoutTicks = 40)
+    public static void initialEndIslandPopulationPersists(GameTestHelper helper) {
+        NaturalSpawnSavedData data = new NaturalSpawnSavedData();
+        helper.assertTrue(!data.isInitialEndIslandPopulated(),
+                "Initial End island started marked as populated");
+        data.markInitialEndIslandPopulated();
+        NaturalSpawnSavedData restored = NaturalSpawnSavedData.load(data.save(new CompoundTag()));
+        helper.assertTrue(restored.isInitialEndIslandPopulated(),
+                "Initial End island population flag did not survive serialization");
         helper.succeed();
     }
 }

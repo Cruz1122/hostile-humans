@@ -11,8 +11,10 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -241,6 +243,41 @@ public final class HumanShieldGameTest {
                 "Critical strike did not amplify the single melee hit");
         helper.assertTrue(!human.criticalStrikeReady,
                 "Critical strike state was not consumed after attacking");
+        helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 100)
+    public static void humanAttacksHostileMob(GameTestHelper helper) {
+        Human human = createHuman(helper);
+        helper.getLevel().getEntitiesOfClass(Mob.class, human.getBoundingBox().inflate(6.0D), entity -> entity != human)
+                .forEach(Entity::discard);
+        Zombie target = createZombie(helper, new BlockPos(4, 1, 2));
+        human.setNoAi(false);
+        human.setCombatSkillTierOverride(CombatSkillTier.T1);
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
+        human.setItemSlot(EquipmentSlot.OFFHAND, ItemStack.EMPTY);
+        human.setCombatTask();
+        human.setTarget(target);
+        float initialHealth = target.getHealth();
+
+        helper.startSequence()
+                .thenIdle(80)
+                .thenExecute(() -> {
+                    helper.assertTrue(target.getHealth() < initialHealth,
+                            "Human targeted the hostile mob but never attacked it");
+                    helper.succeed();
+        });
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 40)
+    public static void roamerTargetPolicyIncludesHostileMobs(GameTestHelper helper) {
+        Human roamer = ModEntityType.ROAMER.get().create(helper.getLevel());
+        if (roamer == null) throw new IllegalStateException("Roamer creation failed");
+        Zombie target = createZombie(helper, new BlockPos(4, 1, 2));
+        helper.assertTrue(roamer.shouldTargetMob(target),
+                "Roamer target policy excluded hostile mobs");
+        roamer.discard();
+        target.discard();
         helper.succeed();
     }
 

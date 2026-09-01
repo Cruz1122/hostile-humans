@@ -41,7 +41,10 @@ public final class HumanDeathLootGameTest {
         human.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
         human.setItemSlot(EquipmentSlot.HEAD, damaged(new ItemStack(Items.DIAMOND_HELMET), 17));
 
-        AABB area = new AABB(human.blockPosition()).inflate(4.0D);
+        // Other death-loot fixtures can run in nearby templates. Keep the
+        // assertion area tight enough to exclude their drops.
+        AABB area = human.getBoundingBox().inflate(1.5D);
+        itemEntities(helper, area).forEach(ItemEntity::discard);
         human.kill();
         helper.runAfterDelay(2, () -> {
             helper.assertTrue(countItem(helper, area, Items.IRON_INGOT) == 3, "Inventory iron was not conserved");
@@ -117,28 +120,64 @@ public final class HumanDeathLootGameTest {
         helper.succeed();
     }
 
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "humanDeathLoot", timeoutTicks = 60)
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "humanDeathLootPlayerXp", timeoutTicks = 60)
     public static void playerKillProducesHumanExperience(GameTestHelper helper) {
         Human human = createHuman(helper);
+        AABB isolationArea = human.getBoundingBox().inflate(8.0D);
+        helper.getLevel().getEntitiesOfClass(Human.class, isolationArea, other -> other != human)
+                .forEach(Human::discard);
+        helper.getLevel().getEntitiesOfClass(ExperienceOrb.class, isolationArea).forEach(ExperienceOrb::discard);
         human.setCombatSkillTierOverride(CombatSkillTier.T1);
         human.setItemSlot(EquipmentSlot.MAINHAND, enchantedSword());
         FakePlayer killer = new FakePlayer(helper.getLevel(), new GameProfile(java.util.UUID.randomUUID(), "human-xp-killer"));
-        killer.setPos(human.position());
+        killer.setPos(human.position().add(16.0D, 0.0D, 0.0D));
         helper.getLevel().addFreshEntity(killer);
-        AABB area = new AABB(human.blockPosition()).inflate(4.0D);
+        AABB area = human.getBoundingBox().inflate(1.5D);
         int expected = human.getExperienceReward();
         human.setHealth(1.0F);
         human.hurt(helper.getLevel().damageSources().playerAttack(killer), 100.0F);
-        // Keep the synthetic killer from absorbing one of the split XP orbs
-        // before the assertion observes the complete reward.
-        killer.setPos(human.position().add(16.0D, 0.0D, 0.0D));
         helper.runAfterDelay(2, () -> {
-            int actual = helper.getLevel().getEntitiesOfClass(ExperienceOrb.class, area).stream()
-                    .mapToInt(ExperienceOrb::getValue).sum();
-            helper.assertTrue(actual == expected, "Player kill XP was " + actual + ", expected " + expected);
-            killer.kill();
+            try {
+                int actual = helper.getLevel().getEntitiesOfClass(ExperienceOrb.class, area).stream()
+                        .mapToInt(ExperienceOrb::getValue).sum();
+                helper.assertTrue(actual == expected, "Player kill XP was " + actual + ", expected " + expected);
+            } finally {
+                killer.discard();
+            }
             helper.succeed();
         });
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "humanDeathLoot", timeoutTicks = 60)
+    public static void humanCollectsExperienceOrb(GameTestHelper helper) {
+        Human human = createHuman(helper);
+        helper.getLevel().getEntitiesOfClass(Human.class, human.getBoundingBox().inflate(8.0D), other -> other != human)
+                .forEach(Human::discard);
+        ExperienceOrb orb = new ExperienceOrb(helper.getLevel(), human.getX() + 0.5D,
+                human.getY(), human.getZ(), 7);
+        helper.getLevel().addFreshEntity(orb);
+        helper.runAfterDelay(4, () -> {
+            helper.assertTrue(orb.isRemoved(), "Human did not collect the nearby experience orb");
+            helper.assertTrue(human.getExperiencePoints() == 7,
+                    "Human stored " + human.getExperiencePoints() + " XP instead of 7");
+            helper.assertTrue(human.getExperienceLevel() == 1,
+                    "Human XP did not advance to the expected player-style level");
+            helper.succeed();
+        });
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "humanDeathLoot", timeoutTicks = 40)
+    public static void humanExperiencePersistsThroughNbt(GameTestHelper helper) {
+        Human human = createHuman(helper);
+        human.giveExperiencePoints(37);
+        CompoundTag saved = new CompoundTag();
+        human.addAdditionalSaveData(saved);
+
+        human.giveExperiencePoints(5);
+        human.readAdditionalSaveData(saved);
+        helper.assertTrue(human.getExperiencePoints() == 37,
+                "Human XP did not survive NBT round trip: " + human.getExperiencePoints());
+        helper.succeed();
     }
 
     private static Human createHuman(GameTestHelper helper) {

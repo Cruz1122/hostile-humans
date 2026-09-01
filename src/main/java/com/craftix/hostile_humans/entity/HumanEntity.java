@@ -5,6 +5,7 @@ import com.craftix.hostile_humans.entity.ai.control.HumanEntityWalkControl;
 import com.craftix.hostile_humans.entity.data.HumanData;
 import com.craftix.hostile_humans.entity.data.HumanServerData;
 import com.craftix.hostile_humans.entity.entities.Human;
+import com.craftix.hostile_humans.entity.ai.survival.HumanExperienceCollector;
 import com.craftix.hostile_humans.entity.loadout.HumanDeathRewardCalculator;
 import com.craftix.hostile_humans.entity.type.human.PickUpLoot;
 import com.google.common.collect.Lists;
@@ -116,6 +117,7 @@ public class HumanEntity extends HumanMobEntityData {
     public void tick() {
         super.tick();
         pick.tick();
+        if (this instanceof Human human) HumanExperienceCollector.tick(human);
     }
 
     public void handleCommand(HumanCommand command) {

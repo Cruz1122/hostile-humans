@@ -16,6 +16,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.AABB;
 import net.minecraftforge.common.util.FakePlayer;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
@@ -139,9 +140,13 @@ public final class HumanEquipmentGameTest {
         });
     }
 
-    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalEquipment", timeoutTicks = 160)
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalEquipmentMovement", timeoutTicks = 160)
     public static void humanWalksToNearbyUsefulDrop(GameTestHelper helper) {
         Human human = createHuman(helper, new BlockPos(1, 1, 2));
+        AABB searchArea = human.getBoundingBox().inflate(12.0D, 6.0D, 12.0D);
+        helper.getLevel().getEntitiesOfClass(Human.class, searchArea, other -> other != human)
+                .forEach(Human::discard);
+        helper.getLevel().getEntitiesOfClass(ItemEntity.class, searchArea).forEach(ItemEntity::discard);
         human.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.IRON_HELMET));
         human.setItemSlot(EquipmentSlot.CHEST, new ItemStack(Items.IRON_CHESTPLATE));
         human.setItemSlot(EquipmentSlot.LEGS, new ItemStack(Items.IRON_LEGGINGS));
@@ -154,7 +159,6 @@ public final class HumanEquipmentGameTest {
         human.getData().setInventoryItem(5, new ItemStack(Items.COOKED_BEEF, 16));
         human.getData().setInventoryItem(6, new ItemStack(Items.STICK, 16));
         human.getData().setInventoryItem(7, new ItemStack(Items.GOLDEN_APPLE));
-        human.setNoAi(true);
         human.setAggressionLevel(AggressionMode.PASSIVE);
         ItemEntity droppedSword = new ItemEntity(helper.getLevel(),
                 helper.absolutePos(new BlockPos(3, 1, 2)).getX() + 0.5D,
@@ -164,13 +168,12 @@ public final class HumanEquipmentGameTest {
         droppedSword.setPickUpDelay(0);
         helper.getLevel().addFreshEntity(droppedSword);
         ItemLootGoal lootGoal = new ItemLootGoal(human, 1.0D);
-        helper.assertTrue(lootGoal.canUse(), "Nearby useful drop was not selected");
-        lootGoal.start();
+        human.targetSelector.removeAllGoals(goal -> true);
+        human.goalSelector.removeAllGoals(goal -> true);
+        human.goalSelector.addGoal(6, lootGoal);
+        human.setNoAi(false);
 
-        helper.startSequence().thenExecuteFor(140, () -> {
-            lootGoal.tick();
-            human.getNavigation().tick();
-        }).thenExecute(() -> {
+        helper.startSequence().thenExecuteFor(140, () -> human.setOnGround(true)).thenExecute(() -> {
             helper.assertTrue(droppedSword.isRemoved(), "Human did not walk to and pick up nearby useful loot");
             human.reevaluateEquipment();
             helper.assertTrue(human.getMainHandItem().is(Items.DIAMOND_SWORD),

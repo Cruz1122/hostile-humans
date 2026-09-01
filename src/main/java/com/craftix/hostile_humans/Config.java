@@ -206,7 +206,7 @@ public class Config {
         enableNaturalHumanSpawning = SERVER_BUILDER.comment("Enable server-side natural Human encounters")
                 .define("enableNaturalHumanSpawning", true);
         spawnAttemptIntervalTicks = SERVER_BUILDER.comment("Ticks between bounded natural spawn attempts")
-                .defineInRange("spawnAttemptIntervalTicks", 1200, 20, 12000);
+                .defineInRange("spawnAttemptIntervalTicks", 120, 20, 12000);
         minSpawnDistance = SERVER_BUILDER.comment("Minimum horizontal distance from an eligible player")
                 .defineInRange("minSpawnDistance", 24, 8, 128);
         maxSpawnDistance = SERVER_BUILDER.comment("Maximum distance from an eligible player")
@@ -218,19 +218,19 @@ public class Config {
         legendSpawnWeight = SERVER_BUILDER.comment("Fraction of natural encounters assigned to Minecraft Legends")
                 .defineInRange("legendSpawnWeight", 0.02D, 0.0D, 1.0D);
         spawnSurfaceChance = SERVER_BUILDER.comment("Natural encounter chance for ordinary Overworld surface")
-                .defineInRange("surfaceChance", 0.05D, 0.0D, 1.0D);
+                .defineInRange("surfaceChance", 0.35D, 0.0D, 1.0D);
         spawnCaveChance = SERVER_BUILDER.comment("Natural encounter chance for caves and villages")
-                .defineInRange("caveChance", 0.07D, 0.0D, 1.0D);
+                .defineInRange("caveChance", 0.45D, 0.0D, 1.0D);
         spawnStructureChance = SERVER_BUILDER.comment("Natural encounter chance for tagged Overworld structures")
-                .defineInRange("structureChance", 0.10D, 0.0D, 1.0D);
+                .defineInRange("structureChance", 0.45D, 0.0D, 1.0D);
         spawnNetherChance = SERVER_BUILDER.comment("Natural encounter chance for Nether wilds")
-                .defineInRange("netherChance", 0.08D, 0.0D, 1.0D);
+                .defineInRange("netherChance", 0.35D, 0.0D, 1.0D);
         spawnFortressChance = SERVER_BUILDER.comment("Natural encounter chance for Nether fortresses and bastions")
-                .defineInRange("fortressChance", 0.12D, 0.0D, 1.0D);
+                .defineInRange("fortressChance", 0.50D, 0.0D, 1.0D);
         spawnEndChance = SERVER_BUILDER.comment("Natural encounter chance for End wilds")
-                .defineInRange("endChance", 0.10D, 0.0D, 1.0D);
+                .defineInRange("endChance", 0.35D, 0.0D, 1.0D);
         spawnEndCityChance = SERVER_BUILDER.comment("Natural encounter chance for End Cities")
-                .defineInRange("endCityChance", 0.15D, 0.0D, 1.0D);
+                .defineInRange("endCityChance", 0.55D, 0.0D, 1.0D);
         squadChance = SERVER_BUILDER.comment("Chance that a natural encounter has more than one Human")
                 .defineInRange("squadChance", 0.45D, 0.0D, 1.0D);
         largeSquadChance = SERVER_BUILDER.comment("Chance that a squad encounter has four or five Humans")

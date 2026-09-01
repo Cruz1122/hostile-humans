@@ -23,6 +23,7 @@ import com.craftix.hostile_humans.client.keymapping.ModKeyMapping;
 import com.craftix.hostile_humans.client.renderer.ClientRenderer;
 import com.craftix.hostile_humans.entity.loadout.HumanLoadoutManager;
 import com.craftix.hostile_humans.entity.entities.ModEntityType;
+import com.craftix.hostile_humans.entity.spawner.NaturalHumanSpawner;
 import com.craftix.hostile_humans.entity.spawner.SpawnHandler;
 import com.craftix.hostile_humans.event.EventHandler;
 import com.craftix.hostile_humans.item.ModItems;
@@ -71,6 +72,7 @@ public class HostileHumans {
         forgeEventBus.addListener(HostileHumansCommands::register);
 
         MinecraftForge.EVENT_BUS.register(new EventHandler());
+        NaturalHumanSpawner.register(MinecraftForge.EVENT_BUS);
         
         populatePatreonNames(new File(FMLPaths.GAMEDIR.get().toFile(), "hhpatreonnamescache.txt"), true);
 

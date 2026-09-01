@@ -96,6 +96,7 @@ public final class HostileHumansCommands {
                 "Nearest Human: %s (%s), UUID=%s, position=(%d, %d, %d), distance=%.1f",
                 human.getName().getString(), BuiltInRegistries.ENTITY_TYPE.getKey(human.getType()), human.getUUID(),
                 human.getBlockX(), human.getBlockY(), human.getBlockZ(), distance)), false);
+        sendExperience(source, human);
         sendEquipment(source, human);
 
         sendInventory(source, human);
@@ -112,6 +113,7 @@ public final class HostileHumansCommands {
         source.sendSuccess(() -> Component.literal("Selected Human: " + human.getName().getString()
                 + ", UUID=" + human.getUUID() + ", position=(" + human.getBlockX() + ", "
                 + human.getBlockY() + ", " + human.getBlockZ() + ")"), false);
+        sendExperience(source, human);
         sendEquipment(source, human);
         sendInventory(source, human);
         return 1;
@@ -130,6 +132,11 @@ public final class HostileHumansCommands {
             }
         }
         if (!hasInventory) source.sendSuccess(() -> Component.literal("  inventory: empty"), false);
+    }
+
+    private static void sendExperience(CommandSourceStack source, Human human) {
+        source.sendSuccess(() -> Component.literal("  experience: " + human.getExperiencePoints()
+                + " points, level " + human.getExperienceLevel()), false);
     }
 
     private static void sendEquipment(CommandSourceStack source, Human human) {

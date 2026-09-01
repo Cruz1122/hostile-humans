@@ -32,7 +32,7 @@ def gameTestClassesByScope = [
         sound          : ['HumanSoundGameTest', 'HumanSmokeGameTest'],
         worldnavigation: ['HumanWorldNavigationGameTest'],
         survival       : ['HumanSurvivalProgressionGameTest'],
-        worldprogression: ['WorldProgressionGameTest', 'NaturalHumanSpawningGameTest'],
+        worldprogression: ['WorldProgressionGameTest', 'NaturalHumanSpawningGameTest', 'NaturalHumanDimensionGameTest'],
         loadout        : ['HumanLoadoutGameTest'],
         deathloot      : ['HumanDeathLootGameTest']
 ]

@@ -24,8 +24,8 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.event.entity.EntityLeaveLevelEvent;
 import net.minecraftforge.event.level.LevelEvent;
+import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
-import net.minecraftforge.fml.common.Mod;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -38,14 +38,21 @@ import java.util.Set;
 import java.util.UUID;
 
 /** One bounded, server-only source of natural Human encounters. */
-@Mod.EventBusSubscriber
 public final class NaturalHumanSpawner {
     private static final int MAX_CANDIDATES_PER_ATTEMPT = 3;
     private static final int GROUP_POSITION_ATTEMPTS = 12;
     private static final int PERSONA_SELECTION_ATTEMPTS = 16;
+    private static final int INITIAL_END_ISLAND_RADIUS = 256;
+    private static final int INITIAL_END_SQUAD_SIZE = 2;
+    private static final int INITIAL_END_MAX_SQUADS = 3;
+    private static final int INITIAL_END_POSITION_ATTEMPTS = 48;
     private static final Map<ServerLevel, Set<UUID>> LOADED_HUMANS = new IdentityHashMap<>();
 
     private NaturalHumanSpawner() {
+    }
+
+    public static void register(IEventBus eventBus) {
+        eventBus.register(NaturalHumanSpawner.class);
     }
 
     @SubscribeEvent
@@ -77,8 +84,69 @@ public final class NaturalHumanSpawner {
         for (ServerLevel level : server.getAllLevels()) {
             if (level.getGameTime() % interval != 0L) continue;
             if (!level.getGameRules().getBoolean(GameRules.RULE_DOMOBSPAWNING)) continue;
+            if (tryPopulateInitialEndIsland(level)) continue;
             attempt(level);
         }
+    }
+
+    private static boolean tryPopulateInitialEndIsland(ServerLevel level) {
+        if (level.dimension() != Level.END) return false;
+        NaturalSpawnSavedData data = NaturalSpawnSavedData.get(level);
+        if (data.isInitialEndIslandPopulated()) return false;
+        List<ServerPlayer> players = level.players().stream()
+                .filter(player -> !player.isSpectator() && isWithinInitialEndIsland(player.blockPosition()))
+                .toList();
+        if (players.isEmpty()) return false;
+        populateInitialEndIsland(level, players.get(level.random.nextInt(players.size())), data, level.random);
+        // While the guaranteed event is pending, do not let an ordinary End
+        // encounter consume the capacity needed to complete it.
+        return true;
+    }
+
+    /**
+     * Populates the central End island atomically with one to three two-member squads.
+     * Empty results are retryable and do not mark the one-time event complete.
+     */
+    public static List<List<Human>> populateInitialEndIsland(ServerLevel level, ServerPlayer player,
+                                                              NaturalSpawnSavedData data, RandomSource random) {
+        if (level.dimension() != Level.END || data.isInitialEndIslandPopulated()
+                || player.isSpectator() || !isWithinInitialEndIsland(player.blockPosition())) return List.of();
+
+        int nearby = countNearbyHumans(level, player.position(), INITIAL_END_ISLAND_RADIUS);
+        int capacity = Math.min(Config.dimensionHumanCap.get() - loadedHumanCount(level),
+                Config.nearbyHumanCapPerPlayer.get() - nearby);
+        int maxSquads = Math.min(INITIAL_END_MAX_SQUADS, capacity / INITIAL_END_SQUAD_SIZE);
+        if (maxSquads < 1) return List.of();
+
+        int squadCount = 1 + random.nextInt(maxSquads);
+        List<List<Human>> squads = new ArrayList<>();
+        List<BlockPos> anchors = new ArrayList<>();
+        for (int index = 0; index < squadCount; index++) {
+            BlockPos anchor = findInitialEndIslandAnchor(level, player, random, anchors);
+            if (anchor == null) {
+                discardSquads(squads);
+                return List.of();
+            }
+            List<Human> squad = spawnGroup(level, anchor, SpawnContext.END_WILDS,
+                    INITIAL_END_SQUAD_SIZE, random);
+            if (squad.size() != INITIAL_END_SQUAD_SIZE || squad.get(0).getSquadId() == null) {
+                squad.forEach(Human::discard);
+                discardSquads(squads);
+                return List.of();
+            }
+            anchors.add(anchor);
+            squads.add(List.copyOf(squad));
+        }
+
+        data.markInitialEndIslandPopulated();
+        HostileHumans.LOGGER.info("Populated the initial End island with {} Human squads ({} Humans)",
+                squads.size(), squads.stream().mapToInt(List::size).sum());
+        return List.copyOf(squads);
+    }
+
+    public static boolean isWithinInitialEndIsland(BlockPos position) {
+        return (long) position.getX() * position.getX() + (long) position.getZ() * position.getZ()
+                <= (long) INITIAL_END_ISLAND_RADIUS * INITIAL_END_ISLAND_RADIUS;
     }
 
     private static void attempt(ServerLevel level) {
@@ -134,7 +202,16 @@ public final class NaturalHumanSpawner {
                 if (isValidPosition(level, cave) && SpawnContextClassifier.isCave(level, cave)) return cave;
             }
         }
-        int y = chunk.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, localX, localZ);
+        if (level.dimension() == Level.NETHER) {
+            int playerY = player.getBlockY();
+            for (int offset = 0; offset <= 24; offset++) {
+                int delta = offset == 0 ? 0 : (offset + 1) / 2 * (offset % 2 == 0 ? -1 : 1);
+                BlockPos interior = new BlockPos(x, playerY + delta, z);
+                if (isValidPosition(level, interior)) return interior;
+            }
+            return null;
+        }
+        int y = chunk.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, localX, localZ) + 1;
         BlockPos surface = new BlockPos(x, y, z);
         return isValidPosition(level, surface) ? surface : null;
     }
@@ -266,7 +343,9 @@ public final class NaturalHumanSpawner {
     }
 
     public static boolean isWithinSpawnDistance(net.minecraft.world.phys.Vec3 playerPosition, BlockPos position) {
-        double distanceSqr = playerPosition.distanceToSqr(position.getX() + 0.5D, position.getY(), position.getZ() + 0.5D);
+        double deltaX = playerPosition.x - (position.getX() + 0.5D);
+        double deltaZ = playerPosition.z - (position.getZ() + 0.5D);
+        double distanceSqr = deltaX * deltaX + deltaZ * deltaZ;
         double minimum = Math.max(0, Config.minSpawnDistance.get());
         double maximum = Math.max(minimum, Config.maxSpawnDistance.get());
         return distanceSqr >= minimum * minimum && distanceSqr <= maximum * maximum;
@@ -324,6 +403,30 @@ public final class NaturalHumanSpawner {
         for (Human human : humans) {
             discardSpawnCandidate(human);
         }
+    }
+
+    private static void discardSquads(List<List<Human>> squads) {
+        squads.stream().flatMap(List::stream).forEach(Human::discard);
+    }
+
+    @Nullable
+    private static BlockPos findInitialEndIslandAnchor(ServerLevel level, ServerPlayer player,
+                                                        RandomSource random, List<BlockPos> existingAnchors) {
+        for (int attempt = 0; attempt < INITIAL_END_POSITION_ATTEMPTS; attempt++) {
+            double distance = 8.0D + random.nextDouble() * 40.0D;
+            double angle = random.nextDouble() * Math.PI * 2.0D;
+            int x = (int) Math.floor(player.getX() + Math.cos(angle) * distance);
+            int z = (int) Math.floor(player.getZ() + Math.sin(angle) * distance);
+            LevelChunk chunk = level.getChunkSource().getChunkNow(x >> 4, z >> 4);
+            if (chunk == null) continue;
+            int y = chunk.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x & 15, z & 15) + 1;
+            BlockPos candidate = new BlockPos(x, y, z);
+            if (isWithinInitialEndIsland(candidate) && isValidPosition(level, candidate)
+                    && existingAnchors.stream().allMatch(anchor -> anchor.distSqr(candidate) >= 64.0D)) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     private static void discardSpawnCandidate(Human human) {

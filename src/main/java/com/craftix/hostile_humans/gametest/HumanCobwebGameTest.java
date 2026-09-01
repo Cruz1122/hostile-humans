@@ -32,18 +32,26 @@ public final class HumanCobwebGameTest {
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalCobweb", timeoutTicks = 80)
     public static void placesAndConsumesOneCobweb(GameTestHelper helper) {
         Setup setup = setup(helper, true, true);
-        int before = setup.human.getData().getInventoryItem(0).getCount();
-        helper.assertTrue(PlaceCobwebAction.tryPlace(setup.human), "Valid tactical cobweb placement was rejected");
-        helper.assertTrue(setup.hasCobwebNearHuman(), "Cobweb was not placed at the deterministic candidate");
-        helper.assertTrue(setup.human.getData().getInventoryItem(0).getCount() == before - 1, "Placement did not consume exactly one cobweb");
+        try {
+            int before = setup.human.getData().getInventoryItem(0).getCount();
+            helper.assertTrue(PlaceCobwebAction.tryPlace(setup.human), "Valid tactical cobweb placement was rejected");
+            helper.assertTrue(setup.hasCobwebNearHuman(), "Cobweb was not placed at the deterministic candidate");
+            helper.assertTrue(setup.human.getData().getInventoryItem(0).getCount() == before - 1, "Placement did not consume exactly one cobweb");
+        } finally {
+            setup.cleanup();
+        }
         helper.succeed();
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalCobweb", timeoutTicks = 80)
     public static void doesNotPlaceWithoutInventory(GameTestHelper helper) {
         Setup setup = setup(helper, false, true);
-        helper.assertTrue(!PlaceCobwebAction.tryPlace(setup.human), "Placement unexpectedly succeeded without cobweb inventory");
-        helper.assertTrue(!setup.hasCobwebNearHuman(), "A cobweb appeared without inventory");
+        try {
+            helper.assertTrue(!PlaceCobwebAction.tryPlace(setup.human), "Placement unexpectedly succeeded without cobweb inventory");
+            helper.assertTrue(!setup.hasCobwebNearHuman(), "A cobweb appeared without inventory");
+        } finally {
+            setup.cleanup();
+        }
         helper.succeed();
     }
 
@@ -51,14 +59,16 @@ public final class HumanCobwebGameTest {
     public static void respectsMobGriefing(GameTestHelper helper) {
         var gameRule = helper.getLevel().getGameRules().getRule(GameRules.RULE_MOBGRIEFING);
         boolean previousValue = gameRule.get();
+        Setup setup = null;
         try {
-            Setup setup = setup(helper, true, false);
+            setup = setup(helper, true, false);
             int before = setup.human.getData().getInventoryItem(0).getCount();
             helper.assertTrue(!PlaceCobwebAction.tryPlace(setup.human), "Placement ignored mobGriefing=false");
             helper.assertTrue(!setup.hasCobwebNearHuman(), "Cobweb appeared with mobGriefing=false");
             helper.assertTrue(setup.human.getData().getInventoryItem(0).getCount() == before, "Inventory changed while placement was rejected");
             helper.succeed();
         } finally {
+            if (setup != null) setup.cleanup();
             gameRule.set(previousValue, helper.getLevel().getServer());
         }
     }
@@ -66,34 +76,46 @@ public final class HumanCobwebGameTest {
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalCobweb", timeoutTicks = 80)
     public static void respectsCooldown(GameTestHelper helper) {
         Setup setup = setup(helper, true, true);
-        helper.assertTrue(PlaceCobwebAction.tryPlace(setup.human), "First cobweb placement failed");
-        setup.human.getData().getInventoryItem(0).setCount(2);
-        int placed = setup.human.cobwebsPlacedThisCombat;
-        helper.assertTrue(!PlaceCobwebAction.tryPlace(setup.human), "Second placement ignored cooldown or nearby web");
-        helper.assertTrue(setup.human.cobwebsPlacedThisCombat == placed, "Cooldown attempt incremented combat counter");
+        try {
+            helper.assertTrue(PlaceCobwebAction.tryPlace(setup.human), "First cobweb placement failed");
+            setup.human.getData().getInventoryItem(0).setCount(2);
+            int placed = setup.human.cobwebsPlacedThisCombat;
+            helper.assertTrue(!PlaceCobwebAction.tryPlace(setup.human), "Second placement ignored cooldown or nearby web");
+            helper.assertTrue(setup.human.cobwebsPlacedThisCombat == placed, "Cooldown attempt incremented combat counter");
+        } finally {
+            setup.cleanup();
+        }
         helper.succeed();
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalCobweb", timeoutTicks = 80)
     public static void rejectsSelfIntersectingCandidate(GameTestHelper helper) {
         Setup setup = setup(helper, true, true);
-        helper.getLevel().setBlock(setup.candidate(), Blocks.STONE.defaultBlockState(), 3);
-        helper.getLevel().setBlock(setup.candidate().north(), Blocks.STONE.defaultBlockState(), 3);
-        helper.getLevel().setBlock(setup.candidate().south(), Blocks.STONE.defaultBlockState(), 3);
-        helper.getLevel().setBlock(setup.candidate().east(), Blocks.STONE.defaultBlockState(), 3);
-        helper.getLevel().setBlock(setup.candidate().west(), Blocks.STONE.defaultBlockState(), 3);
-        helper.assertTrue(!PlaceCobwebAction.tryPlace(setup.human), "Placement succeeded at an occupied candidate");
-        helper.assertTrue(!setup.hasCobwebNearHuman(), "Invalid candidate was modified");
+        try {
+            helper.getLevel().setBlock(setup.candidate(), Blocks.STONE.defaultBlockState(), 3);
+            helper.getLevel().setBlock(setup.candidate().north(), Blocks.STONE.defaultBlockState(), 3);
+            helper.getLevel().setBlock(setup.candidate().south(), Blocks.STONE.defaultBlockState(), 3);
+            helper.getLevel().setBlock(setup.candidate().east(), Blocks.STONE.defaultBlockState(), 3);
+            helper.getLevel().setBlock(setup.candidate().west(), Blocks.STONE.defaultBlockState(), 3);
+            helper.assertTrue(!PlaceCobwebAction.tryPlace(setup.human), "Placement succeeded at an occupied candidate");
+            helper.assertTrue(!setup.hasCobwebNearHuman(), "Invalid candidate was modified");
+        } finally {
+            setup.cleanup();
+        }
         helper.succeed();
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalCobweb", timeoutTicks = 80)
     public static void respectsCombatLimit(GameTestHelper helper) {
         Setup setup = setup(helper, true, true);
-        setup.human.cobwebsPlacedThisCombat = Config.maxCobwebsPerCombat.get();
-        int before = setup.human.getData().getInventoryItem(0).getCount();
-        helper.assertTrue(!PlaceCobwebAction.tryPlace(setup.human), "Placement exceeded the configured combat limit");
-        helper.assertTrue(setup.human.getData().getInventoryItem(0).getCount() == before, "Combat-limit rejection consumed a cobweb");
+        try {
+            setup.human.cobwebsPlacedThisCombat = Config.maxCobwebsPerCombat.get();
+            int before = setup.human.getData().getInventoryItem(0).getCount();
+            helper.assertTrue(!PlaceCobwebAction.tryPlace(setup.human), "Placement exceeded the configured combat limit");
+            helper.assertTrue(setup.human.getData().getInventoryItem(0).getCount() == before, "Combat-limit rejection consumed a cobweb");
+        } finally {
+            setup.cleanup();
+        }
         helper.succeed();
     }
 
@@ -104,7 +126,9 @@ public final class HumanCobwebGameTest {
                 helper.setBlock(new BlockPos(x, 1, z), Blocks.AIR.defaultBlockState());
             }
         }
-        helper.getLevel().getGameRules().getRule(GameRules.RULE_MOBGRIEFING).set(mobGriefing, helper.getLevel().getServer());
+        var mobGriefingRule = helper.getLevel().getGameRules().getRule(GameRules.RULE_MOBGRIEFING);
+        boolean previousMobGriefing = mobGriefingRule.get();
+        mobGriefingRule.set(mobGriefing, helper.getLevel().getServer());
         Human human = ModEntityType.HUMAN1.get().create(helper.getLevel());
         if (human == null) {
             helper.fail("Could not create human_tier1");
@@ -123,10 +147,17 @@ public final class HumanCobwebGameTest {
         if (withCobweb) {
             human.getData().setInventoryItem(0, new ItemStack(Items.COBWEB, 2));
         }
-        return new Setup(helper, human, threat);
+        return new Setup(helper, human, threat, previousMobGriefing);
     }
 
-    private record Setup(GameTestHelper helper, Human human, LivingEntity threat) {
+    private record Setup(GameTestHelper helper, Human human, LivingEntity threat, boolean previousMobGriefing) {
+        private void cleanup() {
+            threat.discard();
+            human.discard();
+            helper.getLevel().getGameRules().getRule(GameRules.RULE_MOBGRIEFING)
+                    .set(previousMobGriefing, helper.getLevel().getServer());
+        }
+
         private BlockPos candidate() {
             return PlaceCobwebAction.candidateFor(human);
         }

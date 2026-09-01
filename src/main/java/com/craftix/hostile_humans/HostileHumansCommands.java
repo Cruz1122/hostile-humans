@@ -4,6 +4,7 @@ import com.craftix.hostile_humans.entity.data.HumanData;
 import com.craftix.hostile_humans.entity.entities.Human;
 import com.craftix.hostile_humans.entity.entities.ModEntityType;
 import com.craftix.hostile_humans.entity.ai.combat.CombatSkillTier;
+import com.craftix.hostile_humans.entity.loadout.HumanLoadoutAudit;
 import com.craftix.hostile_humans.entity.loadout.HumanLoadoutShowcase;
 import com.craftix.hostile_humans.entity.spawner.SpawnContext;
 import com.craftix.hostile_humans.entity.spawner.SpawnContextClassifier;
@@ -26,8 +27,11 @@ import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.RegisterCommandsEvent;
 
 import java.util.Comparator;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.nio.file.Path;
 import java.util.stream.Collectors;
 
 /** Operator-only commands used to inspect the server-side Human state. */
@@ -59,7 +63,12 @@ public final class HostileHumansCommands {
                         .then(Commands.literal("end").executes(c -> spawnDebugLoadout(c.getSource(), SpawnContext.END_WILDS, null)))
                          .then(Commands.literal("tiers").executes(HostileHumansCommands::spawnDebugTiers)))
                 .then(Commands.literal("showcase")
-                        .executes(context -> HumanLoadoutShowcase.build(context.getSource()))));
+                        .executes(context -> HumanLoadoutShowcase.build(context.getSource())))
+                .then(Commands.literal("audit")
+                        .executes(context -> auditLoadouts(context, 10_000))
+                        .then(Commands.argument("samples", IntegerArgumentType.integer(100, 100_000))
+                                .executes(context -> auditLoadouts(context,
+                                        IntegerArgumentType.getInteger(context, "samples"))))));
     }
 
     public static Optional<Human> findNearest(ServerLevel level, Vec3 origin, double radius) {
@@ -178,5 +187,30 @@ public final class HostileHumansCommands {
         CommandSourceStack source = command.getSource();
         for (CombatSkillTier tier : CombatSkillTier.values()) spawnDebugLoadout(source, SpawnContext.OVERWORLD_SURFACE, tier);
         return 1;
+    }
+
+    private static int auditLoadouts(CommandContext<CommandSourceStack> context, int samples) {
+        CommandSourceStack source = context.getSource();
+        ServerLevel level = source.getLevel();
+        var progression = com.craftix.hostile_humans.progression.WorldGearProgressionSnapshot.from(
+                WorldGearProgressionSavedData.get(level));
+        long age = level.getServer().overworld().getGameTime();
+        List<HumanLoadoutAudit.Report> reports = new ArrayList<>();
+        source.sendSuccess(() -> Component.literal("=== Human Spawn Loadout Audit ==="), false);
+        for (SpawnContext spawnContext : SpawnContext.values()) {
+            if (spawnContext == SpawnContext.UNKNOWN) continue;
+            HumanLoadoutAudit.Report report = HumanLoadoutAudit.sample(spawnContext, progression,
+                    CombatSkillTier.T3, age, 0x504832L, samples);
+            reports.add(report);
+            source.sendSuccess(() -> Component.literal(report.summary()), false);
+        }
+        try {
+            HumanLoadoutAudit.writeCsv(Path.of("build", "reports", "hostile-humans", "loadout-audit.csv"), reports);
+            source.sendSuccess(() -> Component.literal("CSV written to build/reports/hostile-humans/loadout-audit.csv"), false);
+        } catch (java.io.IOException exception) {
+            source.sendFailure(Component.literal("Could not write loadout audit CSV: " + exception.getMessage()));
+            return 0;
+        }
+        return reports.size();
     }
 }

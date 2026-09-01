@@ -5,6 +5,7 @@ import com.craftix.hostile_humans.entity.ai.control.HumanEntityWalkControl;
 import com.craftix.hostile_humans.entity.data.HumanData;
 import com.craftix.hostile_humans.entity.data.HumanServerData;
 import com.craftix.hostile_humans.entity.entities.Human;
+import com.craftix.hostile_humans.entity.loadout.HumanDeathRewardCalculator;
 import com.craftix.hostile_humans.entity.type.human.PickUpLoot;
 import com.google.common.collect.Lists;
 import com.mojang.datafixers.util.Pair;
@@ -240,32 +241,31 @@ public class HumanEntity extends HumanMobEntityData {
 
     @Override
     protected void dropEquipment() {
-        HumanData humanMobEntityData;
-        if (!this.level().isClientSide) {
+        if (this.level().isClientSide) return;
 
-            humanMobEntityData = HumanServerData.get().getHumanMob(getUUID());
-
-            if (humanMobEntityData == null) {
-                return;
-            }
-
-            float dropChance = 0.2f; //move to config
-
-            NonNullList<ItemStack> inventory = humanMobEntityData.getInventoryItems();
-            if (inventory != null) {
-                for (ItemStack itemstack : inventory) {
-                    if (!itemstack.isEmpty() && !EnchantmentHelper.hasVanishingCurse(itemstack)) {
-
-                        if (this.getMainHandItem() == itemstack) {
-                            if (random.nextFloat() < dropChance)
-                                this.spawnAtLocation(itemstack);
-                        } else {
-                            this.spawnAtLocation(itemstack);
-                        }
-                    }
-                }
+        if (this instanceof Human human) human.cacheDeathExperienceReward();
+        HumanData data = HumanServerData.get().getHumanMob(getUUID());
+        if (data != null) {
+            NonNullList<ItemStack> inventory = data.getInventoryItems();
+            for (int index = 0; index < inventory.size(); index++) {
+                ItemStack stack = inventory.get(index);
+                data.setInventoryItem(index, ItemStack.EMPTY);
+                dropOwnedStack(stack);
             }
         }
+
+        // Armor and hands are live stores. HumanData.armorItems/handItems are
+        // snapshots and must never be traversed as additional possessions.
+        for (EquipmentSlot slot : EquipmentSlot.values()) {
+            ItemStack stack = getItemBySlot(slot);
+            setItemSlot(slot, ItemStack.EMPTY);
+            dropOwnedStack(stack);
+        }
+    }
+
+    private void dropOwnedStack(ItemStack stack) {
+        if (stack.isEmpty() || EnchantmentHelper.hasVanishingCurse(stack)) return;
+        spawnAtLocation(stack.copy());
     }
 
     @Override

@@ -74,6 +74,15 @@ public class Config {
     public static ForgeConfigSpec.IntValue nearbyHumanCapPerPlayer;
     public static ForgeConfigSpec.IntValue dimensionHumanCap;
     public static ForgeConfigSpec.DoubleValue legendSpawnWeight;
+    public static ForgeConfigSpec.DoubleValue spawnSurfaceChance;
+    public static ForgeConfigSpec.DoubleValue spawnCaveChance;
+    public static ForgeConfigSpec.DoubleValue spawnStructureChance;
+    public static ForgeConfigSpec.DoubleValue spawnNetherChance;
+    public static ForgeConfigSpec.DoubleValue spawnFortressChance;
+    public static ForgeConfigSpec.DoubleValue spawnEndChance;
+    public static ForgeConfigSpec.DoubleValue spawnEndCityChance;
+    public static ForgeConfigSpec.DoubleValue squadChance;
+    public static ForgeConfigSpec.DoubleValue largeSquadChance;
     public static ForgeConfigSpec.IntValue loadoutAgeCapTicks;
     public static ForgeConfigSpec.DoubleValue loadoutOverworldNetheriteChance;
     public static ForgeConfigSpec.DoubleValue loadoutNetherNetheriteChance;
@@ -103,6 +112,7 @@ public class Config {
     public static ForgeConfigSpec.DoubleValue loadoutEnchantLevel3Chance;
     public static ForgeConfigSpec.DoubleValue loadoutEnchantLevel4Chance;
     public static ForgeConfigSpec.DoubleValue loadoutEnchantLevel5Chance;
+    public static ForgeConfigSpec.DoubleValue deathXpScale;
 
     static {
         BUILDER.push("Hostile Humans Settings");
@@ -196,17 +206,35 @@ public class Config {
         enableNaturalHumanSpawning = SERVER_BUILDER.comment("Enable server-side natural Human encounters")
                 .define("enableNaturalHumanSpawning", true);
         spawnAttemptIntervalTicks = SERVER_BUILDER.comment("Ticks between bounded natural spawn attempts")
-                .defineInRange("spawnAttemptIntervalTicks", 120, 20, 1200);
+                .defineInRange("spawnAttemptIntervalTicks", 1200, 20, 12000);
         minSpawnDistance = SERVER_BUILDER.comment("Minimum horizontal distance from an eligible player")
                 .defineInRange("minSpawnDistance", 24, 8, 128);
         maxSpawnDistance = SERVER_BUILDER.comment("Maximum distance from an eligible player")
                 .defineInRange("maxSpawnDistance", 80, 24, 192);
         nearbyHumanCapPerPlayer = SERVER_BUILDER.comment("Maximum loaded Humans near one player")
-                .defineInRange("nearbyHumanCapPerPlayer", 8, 1, 64);
+                .defineInRange("nearbyHumanCapPerPlayer", 6, 1, 64);
         dimensionHumanCap = SERVER_BUILDER.comment("Maximum loaded Humans in one dimension")
-                .defineInRange("dimensionHumanCap", 40, 1, 256);
+                .defineInRange("dimensionHumanCap", 24, 1, 256);
         legendSpawnWeight = SERVER_BUILDER.comment("Fraction of natural encounters assigned to Minecraft Legends")
                 .defineInRange("legendSpawnWeight", 0.02D, 0.0D, 1.0D);
+        spawnSurfaceChance = SERVER_BUILDER.comment("Natural encounter chance for ordinary Overworld surface")
+                .defineInRange("surfaceChance", 0.05D, 0.0D, 1.0D);
+        spawnCaveChance = SERVER_BUILDER.comment("Natural encounter chance for caves and villages")
+                .defineInRange("caveChance", 0.07D, 0.0D, 1.0D);
+        spawnStructureChance = SERVER_BUILDER.comment("Natural encounter chance for tagged Overworld structures")
+                .defineInRange("structureChance", 0.10D, 0.0D, 1.0D);
+        spawnNetherChance = SERVER_BUILDER.comment("Natural encounter chance for Nether wilds")
+                .defineInRange("netherChance", 0.08D, 0.0D, 1.0D);
+        spawnFortressChance = SERVER_BUILDER.comment("Natural encounter chance for Nether fortresses and bastions")
+                .defineInRange("fortressChance", 0.12D, 0.0D, 1.0D);
+        spawnEndChance = SERVER_BUILDER.comment("Natural encounter chance for End wilds")
+                .defineInRange("endChance", 0.10D, 0.0D, 1.0D);
+        spawnEndCityChance = SERVER_BUILDER.comment("Natural encounter chance for End Cities")
+                .defineInRange("endCityChance", 0.15D, 0.0D, 1.0D);
+        squadChance = SERVER_BUILDER.comment("Chance that a natural encounter has more than one Human")
+                .defineInRange("squadChance", 0.45D, 0.0D, 1.0D);
+        largeSquadChance = SERVER_BUILDER.comment("Chance that a squad encounter has four or five Humans")
+                .defineInRange("largeSquadChance", 0.22D, 0.0D, 1.0D);
         SERVER_BUILDER.pop();
 
         SERVER_BUILDER.push("naturalLoadouts");
@@ -215,35 +243,35 @@ public class Config {
         loadoutOverworldNetheriteChance = SERVER_BUILDER.comment("Base Netherite quality chance in the Overworld after Netherite is unlocked")
                 .defineInRange("overworldNetheriteChance", 0.04D, 0.0D, 1.0D);
         loadoutNetherNetheriteChance = SERVER_BUILDER.comment("Base Netherite quality chance in Nether wilds after Netherite is unlocked")
-                .defineInRange("netherNetheriteChance", 0.25D, 0.0D, 1.0D);
+                .defineInRange("netherNetheriteChance", 0.12D, 0.0D, 1.0D);
         loadoutEndNetheriteChance = SERVER_BUILDER.comment("Base Netherite quality chance in the End after Netherite is unlocked")
-                .defineInRange("endNetheriteChance", 0.82D, 0.0D, 1.0D);
+                .defineInRange("endNetheriteChance", 0.30D, 0.0D, 1.0D);
         loadoutPostEndOverworldNetheriteChance = SERVER_BUILDER.comment("Effective Overworld Netherite chance after the End has been visited")
-                .defineInRange("postEndOverworldNetheriteChance", 0.48D, 0.0D, 1.0D);
+                .defineInRange("postEndOverworldNetheriteChance", 0.18D, 0.0D, 1.0D);
         loadoutPostEndNetherNetheriteChance = SERVER_BUILDER.comment("Effective Nether Netherite chance after the End has been visited")
-                .defineInRange("postEndNetherNetheriteChance", 0.62D, 0.0D, 1.0D);
+                .defineInRange("postEndNetherNetheriteChance", 0.32D, 0.0D, 1.0D);
         loadoutOverworldNetheriteCap = SERVER_BUILDER.comment("Absolute Overworld cap for Netherite quality")
                 .defineInRange("overworldNetheriteCap", 0.28D, 0.0D, 1.0D);
         loadoutNetherNetheriteCap = SERVER_BUILDER.comment("Absolute Nether cap for Netherite quality")
-                .defineInRange("netherNetheriteCap", 0.70D, 0.0D, 1.0D);
+                .defineInRange("netherNetheriteCap", 0.45D, 0.0D, 1.0D);
         loadoutEndNetheriteCap = SERVER_BUILDER.comment("Absolute End cap for Netherite quality")
-                .defineInRange("endNetheriteCap", 0.95D, 0.0D, 1.0D);
+                .defineInRange("endNetheriteCap", 0.55D, 0.0D, 1.0D);
         loadoutDiamondOverworldChance = SERVER_BUILDER.comment("Base Diamond quality chance in the Overworld after Diamond is unlocked")
                 .defineInRange("diamondOverworldChance", 0.16D, 0.0D, 1.0D);
         loadoutDiamondNetherChance = SERVER_BUILDER.comment("Base Diamond quality chance in Nether contexts")
-                .defineInRange("diamondNetherChance", 0.78D, 0.0D, 1.0D);
+                .defineInRange("diamondNetherChance", 0.58D, 0.0D, 1.0D);
         loadoutDiamondEndChance = SERVER_BUILDER.comment("Base Diamond quality chance in End contexts")
-                .defineInRange("diamondEndChance", 0.98D, 0.0D, 1.0D);
+                .defineInRange("diamondEndChance", 0.82D, 0.0D, 1.0D);
         loadoutPostEndDiamondBoost = SERVER_BUILDER.comment("Additional Diamond quality bias after the End has been visited")
-                .defineInRange("postEndDiamondBoost", 0.52D, 0.0D, 1.0D);
+                .defineInRange("postEndDiamondBoost", 0.24D, 0.0D, 1.0D);
         loadoutPearlEndChance = SERVER_BUILDER.comment("Ender Pearl chance in End contexts")
-                .defineInRange("pearlEndChance", 0.72D, 0.0D, 1.0D);
+                .defineInRange("pearlEndChance", 0.26D, 0.0D, 1.0D);
         loadoutPostEndPearlBoost = SERVER_BUILDER.comment("Additional Ender Pearl chance after the End has been visited")
-                .defineInRange("postEndPearlBoost", 0.60D, 0.0D, 1.0D);
+                .defineInRange("postEndPearlBoost", 0.16D, 0.0D, 1.0D);
         loadoutTotemEndChance = SERVER_BUILDER.comment("Totem chance in End contexts")
-                .defineInRange("totemEndChance", 0.65D, 0.0D, 1.0D);
+                .defineInRange("totemEndChance", 0.018D, 0.0D, 1.0D);
         loadoutPostEndTotemBoost = SERVER_BUILDER.comment("Additional Totem chance after the End has been visited")
-                .defineInRange("postEndTotemBoost", 0.40D, 0.0D, 1.0D);
+                .defineInRange("postEndTotemBoost", 0.012D, 0.0D, 1.0D);
         loadoutShieldOverworldChance = SERVER_BUILDER.comment("Base shield chance in the Overworld")
                 .defineInRange("shieldOverworldChance", 0.68D, 0.0D, 1.0D);
         loadoutShieldNetherChance = SERVER_BUILDER.comment("Base shield chance in Nether contexts")
@@ -268,6 +296,11 @@ public class Config {
                 .defineInRange("enchantLevel4Chance", 0.16D, 0.0D, 1.0D);
         loadoutEnchantLevel5Chance = SERVER_BUILDER.comment("Relative chance of retaining enchantment level V")
                 .defineInRange("enchantLevel5Chance", 0.06D, 0.0D, 1.0D);
+        SERVER_BUILDER.pop();
+
+        SERVER_BUILDER.push("deathRewards");
+        deathXpScale = SERVER_BUILDER.comment("Multiplier for the bounded Human death XP reward")
+                .defineInRange("xpScale", 1.0D, 0.5D, 1.5D);
         SERVER_BUILDER.pop();
 
         BUILDER.pop();

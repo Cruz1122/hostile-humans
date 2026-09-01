@@ -17,10 +17,9 @@
   ],
   "offhand": {
     "chance": 0.5,
-    "entries": [
-      { "item": "minecraft:shield", "weight": 85 },
-      { "item": "minecraft:totem_of_undying", "weight": 15 }
-    ]
+      "entries": [
+       { "item": "minecraft:shield", "weight": 1 }
+      ]
   },
   "inventory": [
     { "item": "minecraft:iron_sword", "weight": 1 },

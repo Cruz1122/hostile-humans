@@ -242,29 +242,27 @@ public final class NaturalHumanSpawner {
     }
 
     public static int chooseSquadSize(SpawnContext context, RandomSource random) {
-        int roll = random.nextInt(100);
-        int soloWeight = switch (context) {
-            case OVERWORLD_SURFACE -> 55;
-            case OVERWORLD_CAVE -> 55;
-            case VILLAGE, OVERWORLD_STRUCTURE -> 40;
-            case NETHER_WILDS -> 55;
-            case NETHER_FORTRESS, BASTION -> 35;
-            case END_WILDS -> 40;
-            case END_CITY -> 20;
-            default -> 55;
+        double squad = clamp(Config.squadChance.get());
+        if (random.nextDouble() >= squad) return 1;
+        return random.nextDouble() < clamp(Config.largeSquadChance.get())
+                ? 4 + random.nextInt(2) : 2 + random.nextInt(2);
+    }
+
+    public static double contextSpawnChance(SpawnContext context) {
+        return switch (context) {
+            case OVERWORLD_SURFACE -> clamp(Config.spawnSurfaceChance.get());
+            case OVERWORLD_CAVE -> clamp(Config.spawnCaveChance.get());
+            case VILLAGE, OVERWORLD_STRUCTURE -> clamp(Config.spawnStructureChance.get());
+            case NETHER_WILDS -> clamp(Config.spawnNetherChance.get());
+            case NETHER_FORTRESS, BASTION -> clamp(Config.spawnFortressChance.get());
+            case END_WILDS -> clamp(Config.spawnEndChance.get());
+            case END_CITY -> clamp(Config.spawnEndCityChance.get());
+            default -> 0.0D;
         };
-        if (roll < soloWeight) return 1;
-        return roll < soloWeight + 35 ? 2 + random.nextInt(2) : 4 + random.nextInt(2);
     }
 
     private static double contextChance(SpawnContext context) {
-        return switch (context) {
-            case OVERWORLD_SURFACE, NETHER_WILDS, END_WILDS -> 0.35D;
-            case OVERWORLD_CAVE, VILLAGE, OVERWORLD_STRUCTURE -> 0.45D;
-            case NETHER_FORTRESS, BASTION -> 0.50D;
-            case END_CITY -> 0.55D;
-            default -> 0.0D;
-        };
+        return contextSpawnChance(context);
     }
 
     public static boolean isWithinSpawnDistance(net.minecraft.world.phys.Vec3 playerPosition, BlockPos position) {
@@ -330,5 +328,9 @@ public final class NaturalHumanSpawner {
 
     private static void discardSpawnCandidate(Human human) {
         if (!human.isRemoved()) human.kill();
+    }
+
+    private static double clamp(double value) {
+        return Math.max(0.0D, Math.min(1.0D, value));
     }
 }

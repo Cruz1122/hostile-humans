@@ -19,6 +19,7 @@ import com.craftix.hostile_humans.entity.ai.survival.SurvivalClaimManager;
 import com.craftix.hostile_humans.entity.ai.survival.SurvivalProgressionGoal;
 import com.craftix.hostile_humans.entity.ai.survival.SurvivalSnapshot;
 import com.craftix.hostile_humans.entity.equipment.MeleeWeaponSelector;
+import com.craftix.hostile_humans.entity.loadout.HumanDeathRewardCalculator;
 import com.craftix.hostile_humans.entity.loadout.HumanLoadoutGenerator;
 import com.craftix.hostile_humans.progression.WorldGearProgressionSnapshot;
 import com.craftix.hostile_humans.persona.ActivePersonaSavedData;
@@ -163,6 +164,8 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     private UUID squadId;
     private SpawnContext spawnContext = SpawnContext.UNKNOWN;
     private boolean naturalSpawnLoadout;
+    private int cachedDeathExperienceReward;
+    private boolean deathExperienceRewardCached;
     @Nullable
     private UUID squadTargetUuid;
     @Nullable
@@ -1841,6 +1844,19 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         this.combatSkillTierOverride = tier;
     }
 
+    public void cacheDeathExperienceReward() {
+        if (!deathExperienceRewardCached) {
+            cachedDeathExperienceReward = HumanDeathRewardCalculator.calculate(this);
+            deathExperienceRewardCached = true;
+        }
+    }
+
+    @Override
+    public int getExperienceReward() {
+        return deathExperienceRewardCached ? cachedDeathExperienceReward
+                : HumanDeathRewardCalculator.calculate(this);
+    }
+
     @Override
     public void aiStep() {
         super.aiStep();
@@ -1900,27 +1916,6 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         } else {
             return ItemStack.EMPTY;
         }
-    }
-
-    @Override
-    protected void dropCustomDeathLoot(DamageSource p_21385_, int p_21386_, boolean p_21387_) {
-    	super.dropCustomDeathLoot(p_21385_, p_21386_, p_21387_);
-
-    	for(EquipmentSlot equipmentslot : EquipmentSlot.values()) {
-    		ItemStack itemstack = this.getItemBySlot(equipmentslot);
-    		itemstack.setDamageValue(itemstack.getMaxDamage()-random.nextInt(10));
-    		float f = this.getEquipmentDropChance(equipmentslot);
-    		boolean flag = f > 1.0F;
-    		if (!itemstack.isEmpty() && !EnchantmentHelper.hasVanishingCurse(itemstack) && (p_21387_ || flag) && Math.max(this.random.nextFloat() - (float)p_21386_ * 0.01F, 0.0F) < f) {
-    			if (!flag && itemstack.isDamageableItem()) {
-    				itemstack.setDamageValue(itemstack.getMaxDamage() - this.random.nextInt(1 + this.random.nextInt(Math.max(itemstack.getMaxDamage() - 3, 1))));
-    			}
-
-    			this.spawnAtLocation(itemstack);
-    			this.setItemSlot(equipmentslot, ItemStack.EMPTY);
-    		}
-    	}
-
     }
 
     @Override

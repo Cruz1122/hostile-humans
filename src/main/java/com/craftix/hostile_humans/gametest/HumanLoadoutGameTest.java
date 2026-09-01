@@ -3,6 +3,7 @@ package com.craftix.hostile_humans.gametest;
 import com.craftix.hostile_humans.entity.ai.combat.CombatSkillTier;
 import com.craftix.hostile_humans.entity.loadout.HumanLoadoutDefinition;
 import com.craftix.hostile_humans.entity.loadout.HumanLoadoutGenerator;
+import com.craftix.hostile_humans.entity.loadout.HumanLoadoutAudit;
 import com.craftix.hostile_humans.entity.loadout.LoadoutRollContext;
 import com.craftix.hostile_humans.entity.spawner.SpawnContext;
 import com.craftix.hostile_humans.progression.WorldGearProgressionSnapshot;
@@ -83,7 +84,7 @@ public final class HumanLoadoutGameTest {
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "humanLoadouts", timeoutTicks = 40)
-    public static void endNetheriteQualityIsDramaticallyHigh(GameTestHelper helper) {
+    public static void endNetheriteQualityIsApproximatelyThirtyPercent(GameTestHelper helper) {
         int netherite = 0;
         for (int i = 0; i < SAMPLES; i++) {
             if (roll(SpawnContext.END_WILDS, ALL_UNLOCKED, CombatSkillTier.T3, 0L, i).quality() == HumanLoadoutGenerator.Quality.NETHERITE) netherite++;
@@ -91,7 +92,7 @@ public final class HumanLoadoutGameTest {
         double rate = (double) netherite / SAMPLES;
         LoadoutRollContext auditContext = new LoadoutRollContext(SpawnContext.END_WILDS, Level.OVERWORLD, ALL_UNLOCKED,
                 CombatSkillTier.T3, 0L, RandomSource.create(99L));
-        helper.assertTrue(rate >= 0.76D && rate <= 0.88D,
+        helper.assertTrue(rate >= 0.26D && rate <= 0.34D,
                 "End Netherite quality rate was " + rate + ", configured chance=" + HumanLoadoutGenerator.netheriteQualityChance(auditContext));
         helper.succeed();
     }
@@ -113,7 +114,7 @@ public final class HumanLoadoutGameTest {
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "humanLoadouts", timeoutTicks = 40)
-    public static void endAndPostEndHaveAbundantPearlsAndTotems(GameTestHelper helper) {
+    public static void endAndPostEndKeepRareUtilityRare(GameTestHelper helper) {
         int endPearls = 0, endTotems = 0, postEndPearls = 0, postEndTotems = 0;
         for (int i = 0; i < SAMPLES; i++) {
             HumanLoadoutDefinition end = roll(SpawnContext.END_WILDS, POST_END, CombatSkillTier.T3, 0L, i);
@@ -123,10 +124,10 @@ public final class HumanLoadoutGameTest {
             if (containsAny(postEnd, Items.ENDER_PEARL)) postEndPearls++;
             if (containsAny(postEnd, Items.TOTEM_OF_UNDYING)) postEndTotems++;
         }
-        helper.assertTrue(endPearls > 9_500 && endTotems > 9_500,
-                "End did not produce abundant pearls/totems: pearls=" + endPearls + ", totems=" + endTotems);
-        helper.assertTrue(postEndPearls > 5_500 && postEndTotems > 3_500,
-                "Post-End did not produce abundant pearls/totems: pearls=" + postEndPearls + ", totems=" + postEndTotems);
+        helper.assertTrue(endPearls >= 3_700 && endPearls <= 5_300 && endTotems >= 200 && endTotems <= 650,
+                "End rare utility was out of balance: pearls=" + endPearls + ", totems=" + endTotems);
+        helper.assertTrue(postEndPearls >= 1_700 && postEndPearls <= 3_100 && postEndTotems >= 100 && postEndTotems <= 500,
+                "Post-End rare utility was out of balance: pearls=" + postEndPearls + ", totems=" + postEndTotems);
         helper.succeed();
     }
 
@@ -136,8 +137,8 @@ public final class HumanLoadoutGameTest {
         double t1Armor = 0.0D, t5Armor = 0.0D;
         int t1Enchanted = 0, t5Enchanted = 0;
         for (int i = 0; i < SAMPLES; i++) {
-            HumanLoadoutDefinition t1 = roll(SpawnContext.OVERWORLD_SURFACE, ALL_UNLOCKED, CombatSkillTier.T1, 5_184_000L, i);
-            HumanLoadoutDefinition t5 = roll(SpawnContext.OVERWORLD_SURFACE, ALL_UNLOCKED, CombatSkillTier.T5, 5_184_000L, i);
+            HumanLoadoutDefinition t1 = roll(SpawnContext.OVERWORLD_SURFACE, ALL_UNLOCKED, CombatSkillTier.T1, 0L, i);
+            HumanLoadoutDefinition t5 = roll(SpawnContext.OVERWORLD_SURFACE, ALL_UNLOCKED, CombatSkillTier.T5, 0L, i);
             t1Quality += t1.quality().score();
             t5Quality += t5.quality().score();
             t1Armor += t1.armorPieces();
@@ -159,6 +160,38 @@ public final class HumanLoadoutGameTest {
             helper.assertTrue(!containsAny(definition, Items.DIAMOND, Items.NETHERITE_INGOT, Items.NETHERITE_SCRAP, Items.ANCIENT_DEBRIS),
                     "Server age bypassed progression cap");
         }
+        helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "humanLoadouts", timeoutTicks = 80)
+    public static void lockedNetheriteNeverAppearsInLargeSamples(GameTestHelper helper) {
+        WorldGearProgressionSnapshot locked = new WorldGearProgressionSnapshot(true, true, true, false, false);
+        for (SpawnContext context : new SpawnContext[]{SpawnContext.NETHER_WILDS, SpawnContext.END_WILDS}) {
+            for (int i = 0; i < 100_000; i++) {
+                HumanLoadoutDefinition definition = roll(context, locked, CombatSkillTier.T3, 5_184_000L, i);
+                helper.assertTrue(!containsAny(definition, Items.NETHERITE_SWORD, Items.NETHERITE_AXE,
+                                Items.NETHERITE_PICKAXE, Items.NETHERITE_HELMET, Items.NETHERITE_CHESTPLATE,
+                                Items.NETHERITE_LEGGINGS, Items.NETHERITE_BOOTS, Items.NETHERITE_INGOT,
+                                Items.NETHERITE_SCRAP, Items.ANCIENT_DEBRIS),
+                        "Locked Netherite appeared in " + context + " sample " + i);
+            }
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "humanLoadouts", timeoutTicks = 80)
+    public static void reproducibleAuditReportsEndAndBastion(GameTestHelper helper) {
+        HumanLoadoutAudit.Report end = HumanLoadoutAudit.sample(SpawnContext.END_WILDS, ALL_UNLOCKED,
+                CombatSkillTier.T3, 0L, 0x504832L, SAMPLES);
+        helper.assertTrue(end.netheriteRate() >= 0.26D && end.netheriteRate() <= 0.34D,
+                "End audit was outside the 30% target: " + end.summary());
+        HumanLoadoutAudit.Report bastion = HumanLoadoutAudit.sample(SpawnContext.BASTION, ALL_UNLOCKED,
+                CombatSkillTier.T3, 0L, 0x504832L, SAMPLES);
+        helper.assertTrue(bastion.goldArmorRate() == 1.0D,
+                "Bastion gold armor was not guaranteed: " + bastion.summary());
+        helper.assertTrue(HumanLoadoutGenerator.ageFactor(-1L) == 0.0D
+                        && HumanLoadoutGenerator.ageFactor(Long.MAX_VALUE) == 1.0D,
+                "Server-age scaling did not clamp to [0, 1]");
         helper.succeed();
     }
 

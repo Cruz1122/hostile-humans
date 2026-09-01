@@ -1,7 +1,7 @@
 # Testing
 
 Hostile Humans uses Forge GameTests on a dedicated server. The current source
-contains 143 `@GameTest` declarations in 10 domain scopes. Always trust the
+contains 182 `@GameTest` declarations in 13 domain scopes. Always trust the
 non-zero expected-test count printed by Forge for the effective run count.
 
 ## Fast feedback loop
@@ -34,6 +34,8 @@ Available scopes:
 | `worldnavigation` | pillar, bridge, mining, controller integration |
 | `survival` | needs, resources, loot, crafting, hunting, furnace, sharing |
 | `worldprogression` | persistent gear milestones, spawn contexts, natural Human initialization and bounds |
+| `loadout` | seeded procedural quality, material locks, age scaling, armor, enchantments and rare utility |
+| `deathloot` | current inventory/equipment conservation, NBT preservation, Vanishing and XP rewards |
 
 Unknown scopes fail during Gradle configuration. Always confirm that the GameTest summary reports a non-zero expected test count.
 
@@ -52,6 +54,7 @@ Unknown scopes fail during Gradle configuration. Always confirm that the GameTes
 - `persona/**` and `personas.json`: `persona,squad`.
 - Shared entity/data/configuration, registries, Mixins, templates, Gradle, or uncertain impact: run the full suite.
 - World progression or natural spawning: `worldprogression`; run the full suite because configuration, entity lifecycle and dimensions are shared.
+- Death drops, XP, loadout balance or loot tables: `deathloot,loadout`; run the full suite because the vanilla death pipeline and economy are shared.
 
 ## Final gate
 

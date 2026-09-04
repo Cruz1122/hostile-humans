@@ -1,0 +1,14 @@
+{
+  "structures": [
+    {
+      "structure": "hostile_humans:settlement",
+      "weight": 1
+    }
+  ],
+  "placement": {
+    "salt": 193847561,
+    "spacing": 32,
+    "separation": 24,
+    "type": "minecraft:random_spread"
+  }
+}

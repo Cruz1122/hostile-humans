@@ -1,6 +1,6 @@
-# Remove scenario entities and restore the global debug gamerules.
+# Remove only gallery entities and restore the global debug gamerules.
 # CampSavedData records are persistent; use this only after inspecting the run.
-kill @e[tag=hh_mega_scenario]
+kill @e[tag=hh_settlement_gallery]
 gamerule doMobSpawning true
 gamerule doDaylightCycle true
 gamerule mobGriefing true

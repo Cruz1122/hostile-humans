@@ -24,7 +24,7 @@ import java.util.UUID;
 @PrefixGameTestTemplate(false)
 public final class HumanSmokeGameTest {
     private static final String TEMPLATE = "human_smoke";
-    private static final String SOUND_TEMPLATE = "warehouse";
+    private static final String SOUND_TEMPLATE = "human_smoke";
     private static final String DEBUG_TAG = "hh_debug";
 
     private HumanSmokeGameTest() {

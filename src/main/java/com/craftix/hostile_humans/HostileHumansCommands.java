@@ -12,12 +12,15 @@ import com.craftix.hostile_humans.entity.ai.camp.Camp;
 import com.craftix.hostile_humans.entity.ai.camp.CampSavedData;
 import com.craftix.hostile_humans.entity.ai.mission.CampMissionController;
 import com.craftix.hostile_humans.entity.ai.camp.CampService;
+import com.craftix.hostile_humans.entity.ai.settlement.GeneratedSettlementManager;
 import com.craftix.hostile_humans.persona.PersonaFaction;
 import com.craftix.hostile_humans.progression.WorldGearProgressionSavedData;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -74,7 +77,13 @@ public final class HostileHumansCommands {
                         .then(Commands.argument("samples", IntegerArgumentType.integer(100, 100_000))
                                  .executes(context -> auditLoadouts(context,
                                          IntegerArgumentType.getInteger(context, "samples")))))
-                .then(Commands.literal("camp").executes(HostileHumansCommands::createDebugCamp))
+                 .then(Commands.literal("camp").executes(HostileHumansCommands::createDebugCamp))
+                 .then(Commands.literal("settlement")
+                         .executes(HostileHumansCommands::initializeDebugSettlement)
+                         .then(Commands.argument("variant", StringArgumentType.word())
+                                 .suggests((context, builder) -> SharedSuggestionProvider.suggest(
+                                         List.of("plains", "taiga", "desert", "savanna", "snow"), builder))
+                                 .executes(HostileHumansCommands::initializeDebugSettlementVariant)))
                 .then(Commands.literal("expedition").executes(HostileHumansCommands::startDebugExpedition))
                 .then(Commands.literal("raid").executes(HostileHumansCommands::startDebugRaid)));
     }
@@ -206,6 +215,27 @@ public final class HostileHumansCommands {
             return 0;
         }
         context.getSource().sendSuccess(() -> Component.literal("Expedition started for squad " + human.getSquadId()), false);
+        return 1;
+    }
+
+    private static int initializeDebugSettlement(CommandContext<CommandSourceStack> context) {
+        return initializeDebugSettlement(context, "plains");
+    }
+
+    private static int initializeDebugSettlementVariant(CommandContext<CommandSourceStack> context) {
+        return initializeDebugSettlement(context, StringArgumentType.getString(context, "variant"));
+    }
+
+    private static int initializeDebugSettlement(CommandContext<CommandSourceStack> context, String variant) {
+        CommandSourceStack source = context.getSource();
+        ServerLevel level = source.getLevel();
+        BlockPos origin = BlockPos.containing(source.getPosition());
+        if (!GeneratedSettlementManager.placeDebugSettlement(level, origin, variant, "command")) {
+            source.sendFailure(Component.literal("Could not place a settlement here. Use a clear area and try again."));
+            return 0;
+        }
+        source.sendSuccess(() -> Component.literal("Placed and initialized a generated " + variant
+                + " settlement at " + origin + "."), false);
         return 1;
     }
 

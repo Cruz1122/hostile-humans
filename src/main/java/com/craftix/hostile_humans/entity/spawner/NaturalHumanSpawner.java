@@ -278,6 +278,53 @@ public final class NaturalHumanSpawner {
         return List.of();
     }
 
+    /** Spawns a complete, single-faction squad at prevalidated settlement pads. */
+    public static List<Human> spawnCampSquad(ServerLevel level, List<BlockPos> positions,
+                                             PersonaFaction faction, RandomSource random) {
+        return spawnCampSquad(level, positions, faction, random, null);
+    }
+
+    public static List<Human> spawnCampSquad(ServerLevel level, List<BlockPos> positions,
+                                              PersonaFaction faction, RandomSource random, @Nullable String tag) {
+        int size = Math.min(5, positions.size());
+        boolean debugSettlement = "hh_settlement_gallery".equals(tag);
+        if (size < 1 || faction == null || (!debugSettlement
+                && loadedHumanCount(level) + size > Config.dimensionHumanCap.get())) return List.of();
+        List<Human> humans = new ArrayList<>();
+        UUID squadId = size > 1 ? UUID.randomUUID() : null;
+        for (BlockPos position : positions.subList(0, size)) {
+            if (!isValidSettlementPosition(level, position)) {
+                cleanup(humans);
+                return List.of();
+            }
+            Human human = ModEntityType.ROAMER.get().create(level);
+            if (human == null || !assignPersona(human, faction, random)) {
+                if (human != null) discardSpawnCandidate(human);
+                cleanup(humans);
+                return List.of();
+            }
+            human.moveTo(position.getX() + .5D, position.getY(), position.getZ() + .5D,
+                    random.nextFloat() * 360.0F, 0.0F);
+            human.setSpawnContext(SpawnContext.VILLAGE);
+            if (tag != null) human.addTag(tag);
+            if (squadId != null && !human.setSquadId(squadId)) {
+                discardSpawnCandidate(human);
+                cleanup(humans);
+                return List.of();
+            }
+            humans.add(human);
+        }
+        for (Human human : humans) {
+            human.finalizeSpawn(level, level.getCurrentDifficultyAt(human.blockPosition()), MobSpawnType.NATURAL, null, null);
+            if (!level.addFreshEntity(human)) {
+                cleanup(humans);
+                return List.of();
+            }
+            remember(level, human);
+        }
+        return List.copyOf(humans);
+    }
+
     private static List<BlockPos> findGroupPositions(ServerLevel level, BlockPos anchor, SpawnContext context,
                                                        int size, RandomSource random) {
         List<BlockPos> positions = new ArrayList<>();
@@ -374,10 +421,19 @@ public final class NaturalHumanSpawner {
         return isValidPosition(level, position);
     }
 
+    /** Checks a prebuilt settlement pad without applying the natural-spawn gamerule. */
+    public static boolean isValidSettlementPosition(ServerLevel level, BlockPos position) {
+        return isValidPosition(level, position, false);
+    }
+
     private static boolean isValidPosition(ServerLevel level, BlockPos position) {
+        return isValidPosition(level, position, true);
+    }
+
+    private static boolean isValidPosition(ServerLevel level, BlockPos position, boolean requireNaturalSpawning) {
         if (!isLoaded(level, position) || !level.isInWorldBounds(position)
                 || !level.getWorldBorder().isWithinBounds(position)
-                || !level.isNaturalSpawningAllowed(position)) return false;
+                || requireNaturalSpawning && !level.isNaturalSpawningAllowed(position)) return false;
         BlockState feet = level.getBlockState(position);
         BlockState head = level.getBlockState(position.above());
         BlockState floor = level.getBlockState(position.below());

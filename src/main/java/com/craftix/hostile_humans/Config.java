@@ -74,6 +74,8 @@ public class Config {
     public static ForgeConfigSpec.IntValue survivalPathBudgetPerTick;
     public static ForgeConfigSpec.IntValue survivalScanBudgetPerTick;
     public static ForgeConfigSpec.BooleanValue enableCamps;
+    public static ForgeConfigSpec.BooleanValue enableGeneratedSettlements;
+    public static ForgeConfigSpec.IntValue generatedSettlementPopulation;
     public static ForgeConfigSpec.DoubleValue campCreationChance;
     public static ForgeConfigSpec.IntValue minCampSpacing;
     public static ForgeConfigSpec.IntValue maxCampsPerDimension;
@@ -136,7 +138,7 @@ public class Config {
 
     static {
         BUILDER.push("Hostile Humans Settings");
-        disabledStructures = BUILDER.comment("Disabled Structures (comma separated) ex. cottage, cozy_spruce_house, desert_house, desert_house_2, desert_house_3, desert_house_4, farmhouse, fortress_bottom, fortress_top, igloo, large_desert_house, large_spruce_home, oak_house, oak_house_2, oak_house_3, oak_house_4, oak_house_5, savanna_house_2, spruce_cottage, spruce_fort, spruce_house, thin_spruce, tiny_acacia, tiny_igloo, tiny_spruce_house, tower, warehouse").define("disabled_structures", "");
+        disabledStructures = BUILDER.comment("Disabled generated structure IDs (comma separated)").define("disabled_structures", "");
         maxTargeting = BUILDER.comment("The max amount of humans that can attack you at the same time").define("max_targeting", 3);
         greetChance = BUILDER.comment("The chance to send a chat message to the player upon targeting them").define("greet_chance", 0.05d);
         runAwayMiddleFightChance = BUILDER.comment("Chance [0..1] that a low-health human chooses to flee during a combat encounter").defineInRange("run_away_middle_fight_chance", 0.5d, 0.0d, 1.0d);
@@ -236,6 +238,10 @@ public class Config {
 
         SERVER_BUILDER.push("camps");
         enableCamps = SERVER_BUILDER.define("enableCamps", true);
+        enableGeneratedSettlements = SERVER_BUILDER.comment("Generate original multi-house Human settlements in new chunks")
+                .define("enableGeneratedSettlements", true);
+        generatedSettlementPopulation = SERVER_BUILDER.comment("Initial Humans placed in each generated settlement")
+                .defineInRange("generatedSettlementPopulation", 5, 4, 5);
         campCreationChance = SERVER_BUILDER.defineInRange("campCreationChance", 0.02D, 0.0D, 1.0D);
         minCampSpacing = SERVER_BUILDER.defineInRange("minCampSpacing", 128, 16, 512);
         maxCampsPerDimension = SERVER_BUILDER.defineInRange("maxCampsPerDimension", 32, 1, 256);

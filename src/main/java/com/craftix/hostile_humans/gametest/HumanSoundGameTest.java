@@ -30,7 +30,7 @@ import java.util.UUID;
 @GameTestHolder("hostile_humans")
 @PrefixGameTestTemplate(false)
 public final class HumanSoundGameTest {
-    private static final String TEMPLATE = "warehouse";
+    private static final String TEMPLATE = "human_smoke";
     private static final String DEBUG_TAG = "hh_debug";
 
     private HumanSoundGameTest() {

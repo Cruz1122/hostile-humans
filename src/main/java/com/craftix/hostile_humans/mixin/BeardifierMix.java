@@ -10,7 +10,6 @@ import net.minecraft.world.level.levelgen.structure.StructurePiece;
 import net.minecraft.world.level.levelgen.structure.StructureStart;
 import net.minecraft.world.level.levelgen.structure.TerrainAdjustment;
 import net.minecraft.world.level.levelgen.structure.pools.JigsawJunction;
-import net.minecraft.world.level.levelgen.structure.pools.SinglePoolElement;
 import net.minecraft.world.level.levelgen.structure.pools.StructureTemplatePool;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -31,20 +30,12 @@ public abstract class BeardifierMix {
             TerrainAdjustment terrainAdjustment = structureStart.getStructure().terrainAdaptation();
             ObjectList<Beardifier.Rigid> structureRigids = new ObjectArrayList<>();
             ObjectList<JigsawJunction> structureJunctions = new ObjectArrayList<>();
-            boolean skipStructureStart = false;
-
             for (StructurePiece structurePiece : structureStart.getPieces()) {
                 if (!structurePiece.isCloseToChunk(chunkPos, 12)) {
                     continue;
                 }
 
                 if (structurePiece instanceof PoolElementStructurePiece poolElementStructurePiece) {
-                    if (poolElementStructurePiece.getElement() instanceof SinglePoolElement singlePoolElement
-                            && singlePoolElement.template.left().map(location -> location.toString().contains("hostile_humans:fortress_bottom")).orElse(false)) {
-                        skipStructureStart = true;
-                        break;
-                    }
-
                     if (poolElementStructurePiece.getElement().getProjection() == StructureTemplatePool.Projection.RIGID) {
                         structureRigids.add(new Beardifier.Rigid(poolElementStructurePiece.getBoundingBox(), terrainAdjustment, poolElementStructurePiece.getGroundLevelDelta()));
                     }
@@ -61,10 +52,8 @@ public abstract class BeardifierMix {
                 }
             }
 
-            if (!skipStructureStart) {
-                rigids.addAll(structureRigids);
-                junctions.addAll(structureJunctions);
-            }
+            rigids.addAll(structureRigids);
+            junctions.addAll(structureJunctions);
         }
 
         cir.setReturnValue(new Beardifier(rigids.iterator(), junctions.iterator()));

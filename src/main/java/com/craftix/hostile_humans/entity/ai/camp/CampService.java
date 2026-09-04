@@ -33,6 +33,18 @@ public final class CampService {
         return camp;
     }
 
+    /** Registers an established camp whose stations were generated as part of a settlement. */
+    public static Camp createGeneratedCamp(ServerLevel level, BlockPos center, PersonaFaction faction,
+                                           List<BlockPos> storage, BlockPos table, BlockPos furnace) {
+        if (!Config.enableCamps.get() || faction == null || center == null || storage.isEmpty()
+                || table == null || furnace == null) return null;
+        CampSavedData data = CampSavedData.get(level);
+        if (data.count(level.dimension()) >= Config.maxCampsPerDimension.get()
+                || data.hasNearby(level.dimension(), center, Config.minCampSpacing.get())) return null;
+        Camp camp = new Camp(UUID.randomUUID(), level.dimension(), center, faction, storage, table, furnace, center);
+        return data.add(camp) ? camp : null;
+    }
+
     /** Attempts a cheap, resource-backed foundation for a loaded squad member. */
     public static Camp tryFound(Human founder) {
         if (!(founder.level() instanceof ServerLevel level) || !Config.enableCamps.get()

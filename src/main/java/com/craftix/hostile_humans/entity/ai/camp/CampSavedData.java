@@ -53,6 +53,12 @@ public final class CampSavedData extends SavedData {
         }
     }
 
+    public boolean remove(UUID id) {
+        if (camps.remove(id) == null) return false;
+        setDirty();
+        return true;
+    }
+
     public List<Camp> nearby(ResourceKey<Level> dimension, BlockPos center, double radius) {
         double max = radius * radius;
         return camps.values().stream()

@@ -1,6 +1,7 @@
 {
   "replace": false,
   "values": [
+    "hostile_humans:settlement",
     "minecraft:pillager_outpost",
     "minecraft:mineshaft",
     "minecraft:desert_pyramid",

@@ -37,6 +37,7 @@ def gameTestClassesByScope = [
         loadout        : ['HumanLoadoutGameTest'],
         deathloot      : ['HumanDeathLootGameTest'],
         camp           : ['HumanCampGameTest'],
+        settlement     : ['GeneratedSettlementGameTest'],
         expedition     : ['HumanExpeditionGameTest'],
         raid           : ['HumanRaidGameTest']
 ]

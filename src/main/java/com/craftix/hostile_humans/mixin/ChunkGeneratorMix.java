@@ -17,6 +17,8 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import static com.craftix.hostile_humans.HumanUtil.isStructureDisabled;
+import static com.craftix.hostile_humans.entity.ai.settlement.GeneratedSettlementManager.SETTLEMENT_KEY;
+import com.craftix.hostile_humans.Config;
 
 @Mixin(value = ChunkGenerator.class)
 public abstract class ChunkGeneratorMix {
@@ -38,6 +40,9 @@ public abstract class ChunkGeneratorMix {
             if (isStructureDisabled(key.get().location().getPath())) {
                 cir.setReturnValue(false);
                 return;
+            }
+            if (SETTLEMENT_KEY.equals(key.get().location()) && !Config.enableGeneratedSettlements.get()) {
+                cir.setReturnValue(false);
             }
         }
     }

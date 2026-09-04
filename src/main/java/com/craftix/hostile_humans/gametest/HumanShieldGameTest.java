@@ -10,18 +10,25 @@ import com.craftix.hostile_humans.entity.entities.ModEntityType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
+import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.monster.Zombie;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.AABB;
+import net.minecraftforge.common.util.FakePlayer;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
+import com.mojang.authlib.GameProfile;
+
+import java.util.UUID;
 
 @GameTestHolder("hostile_humans")
 @PrefixGameTestTemplate(false)
@@ -62,6 +69,55 @@ public final class HumanShieldGameTest {
                 "A slower axe did not receive a longer attack cooldown");
         helper.assertTrue(axeCooldown >= 20,
                 "The equipped axe can still be spammed before vanilla recovery");
+        helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 40)
+    public static void shieldBreakingAxeDisablesEnemyShield(GameTestHelper helper) {
+        Human human = createHuman(helper);
+        Human target = ModEntityType.HUMAN1.get().create(helper.getLevel());
+        if (target == null) throw new IllegalStateException("Could not create shield target");
+        helper.assertTrue(human.setPersonaId("coldified"), "Could not reserve attacker persona");
+        helper.assertTrue(target.setPersonaId("technoblade"), "Could not reserve shield target persona");
+        target.setNoAi(true);
+        target.moveTo(helper.absolutePos(new BlockPos(4, 1, 2)), 180.0F, 0.0F);
+        target.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        helper.getLevel().addFreshEntity(target);
+        target.startUsingItem(InteractionHand.OFF_HAND);
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_AXE));
+        human.setCombatSkillTierOverride(CombatSkillTier.T1);
+        human.setTarget(target);
+        helper.assertTrue(target.isUsingItem(), "Shield test fixture did not start using its shield");
+
+        CombatIntent intent = human.getCombatTacticsController().evaluate();
+        helper.assertTrue(intent.action() == CombatAction.ATTACK && intent.allowMeleeAttack(),
+                "Equipped axe was kept in shield-switch mode instead of being used to attack");
+        target.setHealth(100.0F);
+        for (int attempt = 0; attempt < 10 && target.isUsingItem(); attempt++) {
+            human.doHurtTarget(target);
+        }
+        helper.assertTrue(!target.isUsingItem(), "Axe hit did not disable the enemy shield");
+        helper.assertTrue(target.shieldDisabledUntilTick > target.tickCount,
+                "Axe hit did not put the enemy shield on cooldown");
+        target.kill();
+        human.kill();
+        helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 40)
+    public static void rangedAimAppliesMovementPenalty(GameTestHelper helper) {
+        Human human = createHuman(helper);
+        double normalSpeed = human.getAttributeValue(Attributes.MOVEMENT_SPEED);
+        for (ItemStack rangedWeapon : new ItemStack[]{new ItemStack(Items.BOW), new ItemStack(Items.CROSSBOW)}) {
+            human.setItemSlot(EquipmentSlot.MAINHAND, rangedWeapon);
+            human.startUsingItem(InteractionHand.MAIN_HAND);
+            helper.assertTrue(human.getAttributeValue(Attributes.MOVEMENT_SPEED) < normalSpeed,
+                    rangedWeapon.getItem() + " did not apply a movement penalty while aiming");
+            human.stopUsingItem();
+            helper.assertTrue(Math.abs(human.getAttributeValue(Attributes.MOVEMENT_SPEED) - normalSpeed) < 0.0001D,
+                    rangedWeapon.getItem() + " left the aiming movement penalty active after release");
+        }
+        human.discard();
         helper.succeed();
     }
 
@@ -303,6 +359,55 @@ public final class HumanShieldGameTest {
                             "Human targeted the hostile mob but never attacked it");
                     helper.succeed();
         });
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 40)
+    public static void combatAlwaysFacesActiveTarget(GameTestHelper helper) {
+        Human human = createHuman(helper);
+        Zombie target = createZombie(helper, new BlockPos(4, 1, 2));
+        human.setTarget(target);
+        human.setYRot(180.0F);
+        human.setXRot(0.0F);
+        human.yBodyRot = 180.0F;
+        human.yHeadRot = 180.0F;
+
+        helper.startSequence()
+                .thenIdle(1)
+                .thenExecute(() -> {
+                    float expectedYaw = -90.0F;
+                    helper.assertTrue(Math.abs(Mth.wrapDegrees(human.getYRot() - expectedYaw)) < 1.0F,
+                            "Human finished a combat tick facing away from its target: yaw="
+                                    + human.getYRot() + ", target=" + target.blockPosition());
+                    helper.assertTrue(Math.abs(Mth.wrapDegrees(human.yBodyRot - expectedYaw)) < 1.0F,
+                            "Human body finished a combat tick facing away from its target: bodyYaw="
+                                    + human.yBodyRot);
+                    helper.succeed();
+                });
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 40)
+    public static void creativePlayersAreIgnoredAsCombatTargets(GameTestHelper helper) {
+        Human human = createHuman(helper);
+        FakePlayer player = new FakePlayer(
+                helper.getLevel(), new GameProfile(UUID.randomUUID(), "hh-creative-combat"));
+        player.setGameMode(GameType.SURVIVAL);
+        human.setTarget(player);
+        helper.assertTrue(human.getTarget() == player,
+                "Survival player could not be used to seed the target transition");
+
+        player.setGameMode(GameType.CREATIVE);
+        helper.assertTrue(!human.canAttack(player), "Creative player remained attackable");
+        human.setTarget(player);
+        helper.assertTrue(human.getTarget() == null,
+                "Human accepted a creative player as a newly assigned target");
+
+        helper.startSequence()
+                .thenIdle(1)
+                .thenExecute(() -> {
+                    helper.assertTrue(human.getTarget() == null,
+                            "Human retained a player after that player switched to creative");
+                    helper.succeed();
+                });
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 140)

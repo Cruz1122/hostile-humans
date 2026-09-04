@@ -594,6 +594,15 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         }
         if (entityIn instanceof LivingEntity livingEntity && !this.canAttack(livingEntity)) return false;
 
+        LivingEntity targetToDisable = entityIn instanceof LivingEntity livingEntity ? livingEntity : null;
+        ItemStack targetShield = targetToDisable == null ? ItemStack.EMPTY : targetToDisable.getUseItem();
+        boolean shouldDisableTargetShield = targetToDisable != null
+                && (targetToDisable.isBlocking()
+                || targetToDisable.isUsingItem()
+                && targetShield.canPerformAction(net.minecraftforge.common.ToolActions.SHIELD_BLOCK))
+                && !targetShield.isEmpty()
+                && this.getMainHandItem().canDisableShield(targetShield, targetToDisable, this);
+
         // Keep melee attacks from being deterministic. Higher skill tiers are
         // more reliable, but every tier can still miss occasionally. Hunting
         // passive animals is a survival action, not a PvP swing, so it always connects.
@@ -617,6 +626,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         try {
             result = super.doHurtTarget(entityIn);
         } finally {
+            if (shouldDisableTargetShield) disableTargetShield(targetToDisable);
             if (critical && attackDamage != null) {
                 attackDamage.removeModifier(CRITICAL_DAMAGE_MODIFIER_UUID);
             }
@@ -637,6 +647,18 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
         swing(InteractionHand.MAIN_HAND);
         return result;
+    }
+
+    private void disableTargetShield(LivingEntity target) {
+        if (target instanceof Human human) {
+            human.disableShield(true);
+        } else if (target instanceof Player player) {
+            player.stopUsingItem();
+            player.getCooldowns().addCooldown(Items.SHIELD, 100);
+            player.level().broadcastEntityEvent(player, (byte) 30);
+        } else {
+            target.stopUsingItem();
+        }
     }
 
     /** A critical hit is valid only while the entity is physically descending. */
@@ -731,7 +753,8 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     public void startUsingItem(@NotNull InteractionHand hand) {
         super.startUsingItem(hand);
         ItemStack itemstack = this.getItemInHand(hand);
-        if (itemstack.canPerformAction(net.minecraftforge.common.ToolActions.SHIELD_BLOCK) || isFood(itemstack)) {
+        if (itemstack.canPerformAction(net.minecraftforge.common.ToolActions.SHIELD_BLOCK)
+                || isFood(itemstack) || HumanUtil.isRangedWeapon(itemstack)) {
             AttributeInstance modifiableattributeinstance = this.getAttribute(Attributes.MOVEMENT_SPEED);
             modifiableattributeinstance.removeModifier(USE_ITEM_SPEED_PENALTY);
             modifiableattributeinstance.addTransientModifier(USE_ITEM_SPEED_PENALTY);
@@ -832,7 +855,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     @Override
     public boolean canAttack(LivingEntity entity) {
-        if (entity instanceof Player player && (player.isCreative() || player.isSpectator())) {
+        if (isIgnoredPlayer(entity)) {
             return false;
         }
 
@@ -864,6 +887,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     @Override
     public void setTarget(@Nullable LivingEntity livingEntity) {
+        if (isIgnoredPlayer(livingEntity)) livingEntity = null;
         if (livingEntity instanceof Human otherHuman && areAllies(this, otherHuman)) livingEntity = null;
         if (!this.level().isClientSide && livingEntity != null && (this.isSleepingOrLyingDown() || this.healingAfterFleeTicks > 0)) {
             livingEntity = null;
@@ -961,17 +985,24 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     public void receiveSquadAlert(LivingEntity target, BlockPos lastKnownPos, long seenTick,
                                   SquadAlertReason reason) {
+        if (isIgnoredPlayer(target)) return;
         rememberSquadThreat(target.getUUID(), lastKnownPos, seenTick);
-        if (this.isFleeing || this.healingAfterFleeTicks > 0 || this.isUsingItem() || this.isSleepingOrLyingDown()
+        if (this.isFleeing || this.healingAfterFleeTicks > 0 || this.isSleepingOrLyingDown()
                 || !this.canAttack(target)) return;
         LivingEntity current = this.getTarget();
         boolean committed = current != null && current.isAlive() && this.tickCount < this.squadTargetCommitmentUntilTick;
         if (committed && reason.priority() <= this.squadTargetReason.priority()) return;
+        if (this.isUsingItem() && reason != SquadAlertReason.DIRECT_ATTACKER
+                && reason != SquadAlertReason.SHARED_AGGRO) return;
         this.applyingSquadTarget = true;
         try {
             setTarget(target);
         } finally {
             this.applyingSquadTarget = false;
+        }
+        if ((reason == SquadAlertReason.DIRECT_ATTACKER || reason == SquadAlertReason.SHARED_AGGRO)
+                && this.isUsingItem()) {
+            this.stopUsingItem();
         }
         if (getTarget() == target) {
             this.squadAdoptedTarget = true;
@@ -1395,6 +1426,10 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     @Override
     public void tick() {
+        LivingEntity currentTarget = this.getTarget();
+        if (currentTarget != null && (!currentTarget.isAlive() || isIgnoredPlayer(currentTarget))) {
+            this.setTarget(null);
+        }
         if (!this.level().isClientSide) {
             this.combatIntent = this.combatTacticsController.evaluate();
             if (this.combatIntent.action() == CombatAction.SWITCH_TO_SHIELD_DISABLER) {
@@ -1410,6 +1445,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             this.equipmentReevaluationQueued = false;
             this.reevaluateEquipment();
         }
+        faceCombatTarget();
         if (!this.level().isClientSide && this.survivalProgressionGoal != null) {
             this.survivalProgressionGoal.publishDebugState();
         }
@@ -1909,6 +1945,26 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     public CombatIntent getCombatIntent() {
         return this.combatIntent;
+    }
+
+    private void faceCombatTarget() {
+        LivingEntity target = this.getTarget();
+        if (target == null || !target.isAlive() || isIgnoredPlayer(target)) return;
+
+        // Movement and shield goals can temporarily own the look control. Apply the
+        // combat orientation after all goals have ticked so the body and head cannot
+        // finish a combat tick facing away from the active target.
+        this.lookAt(target, 180.0F, 180.0F);
+        this.yBodyRot = this.getYRot();
+        this.yHeadRot = this.getYRot();
+    }
+
+    private static boolean isIgnoredPlayer(@Nullable LivingEntity entity) {
+        return entity instanceof Player player && (player.isCreative() || player.isSpectator());
+    }
+
+    public boolean hasSquadAttackOpportunity() {
+        return this.squadAdoptedTarget && this.getTarget() != null;
     }
 
     public CombatTacticsController getCombatTacticsController() {

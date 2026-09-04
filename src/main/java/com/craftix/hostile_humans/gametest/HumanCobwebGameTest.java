@@ -10,6 +10,7 @@ import net.minecraft.gametest.framework.GameTest;
 import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameRules;
@@ -116,6 +117,38 @@ public final class HumanCobwebGameTest {
         } finally {
             setup.cleanup();
         }
+        helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalCobweb", timeoutTicks = 100)
+    public static void breaksCobwebBlockingCombatMovement(GameTestHelper helper) {
+        Human human = ModEntityType.HUMAN1.get().create(helper.getLevel());
+        Mob target = net.minecraft.world.entity.EntityType.ZOMBIE.create(helper.getLevel());
+        if (human == null || target == null) throw new IllegalStateException("Could not create cobweb combat fixture");
+
+        BlockPos humanPos = helper.absolutePos(new BlockPos(2, 1, 2));
+        human.moveTo(humanPos, 0.0F, 0.0F);
+        human.setNoAi(true);
+        human.setOnGround(true);
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
+        helper.getLevel().addFreshEntity(human);
+        target.moveTo(helper.absolutePos(new BlockPos(8, 1, 2)), 180.0F, 0.0F);
+        target.setNoAi(true);
+        helper.getLevel().addFreshEntity(target);
+        human.setTarget(target);
+        helper.getLevel().setBlock(humanPos, Blocks.COBWEB.defaultBlockState(), 3);
+
+        for (int tick = 0; tick < 60; tick++) {
+            human.tickCount = tick;
+            human.getTacticalWorldActionController().tick();
+        }
+
+        helper.assertTrue(helper.getLevel().getBlockState(humanPos).isAir(),
+                "Human remained trapped in a cobweb instead of breaking it");
+        helper.assertTrue(human.getTacticalWorldActionController().brokenThisPursuit() > 0,
+                "Human did not record breaking the cobweb as combat navigation progress");
+        target.discard();
+        human.discard();
         helper.succeed();
     }
 

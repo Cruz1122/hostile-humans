@@ -2,7 +2,47 @@
   "structures": [
     {
       "structure": "hostile_humans:settlement",
-      "weight": 1
+      "weight": 15
+    },
+    {
+      "structure": "hostile_humans:settlement_plains_small",
+      "weight": 50
+    },
+    {
+      "structure": "hostile_humans:settlement_plains_medium",
+      "weight": 35
+    },
+    {
+      "structure": "hostile_humans:settlement_taiga_small",
+      "weight": 50
+    },
+    {
+      "structure": "hostile_humans:settlement_taiga_medium",
+      "weight": 35
+    },
+    {
+      "structure": "hostile_humans:settlement_desert_small",
+      "weight": 50
+    },
+    {
+      "structure": "hostile_humans:settlement_desert_medium",
+      "weight": 35
+    },
+    {
+      "structure": "hostile_humans:settlement_savanna_small",
+      "weight": 50
+    },
+    {
+      "structure": "hostile_humans:settlement_savanna_medium",
+      "weight": 35
+    },
+    {
+      "structure": "hostile_humans:settlement_snow_small",
+      "weight": 50
+    },
+    {
+      "structure": "hostile_humans:settlement_snow_medium",
+      "weight": 35
     }
   ],
   "placement": {

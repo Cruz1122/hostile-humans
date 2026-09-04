@@ -5,6 +5,8 @@ import com.craftix.hostile_humans.entity.loadout.HumanLoadoutDefinition;
 import com.craftix.hostile_humans.entity.loadout.HumanLoadoutGenerator;
 import com.craftix.hostile_humans.entity.loadout.HumanLoadoutAudit;
 import com.craftix.hostile_humans.entity.loadout.LoadoutRollContext;
+import com.craftix.hostile_humans.item.HumanSpawnEggSpec;
+import com.craftix.hostile_humans.persona.PersonaFaction;
 import com.craftix.hostile_humans.entity.spawner.SpawnContext;
 import com.craftix.hostile_humans.progression.WorldGearProgressionSnapshot;
 import net.minecraft.gametest.framework.GameTest;
@@ -56,6 +58,54 @@ public final class HumanLoadoutGameTest {
                             Items.NETHERITE_HELMET, Items.NETHERITE_CHESTPLATE, Items.NETHERITE_LEGGINGS, Items.NETHERITE_BOOTS,
                             Items.DIAMOND, Items.NETHERITE_INGOT, Items.NETHERITE_SCRAP, Items.ANCIENT_DEBRIS),
                     "Locked material appeared in a loadout");
+        }
+        helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "humanLoadouts", timeoutTicks = 40)
+    public static void enchantedEggRollsRespectTierCeilingsAndVary(GameTestHelper helper) {
+        HumanLoadoutGenerator.Quality[] ceilings = {
+                HumanLoadoutGenerator.Quality.NETHERITE,
+                HumanLoadoutGenerator.Quality.DIAMOND,
+                HumanLoadoutGenerator.Quality.IRON,
+                HumanLoadoutGenerator.Quality.IRON,
+                HumanLoadoutGenerator.Quality.SCRAPPY
+        };
+        for (CombatSkillTier tier : CombatSkillTier.values()) {
+            LoadoutRollContext context = new LoadoutRollContext(SpawnContext.OVERWORLD_STRUCTURE, Level.OVERWORLD,
+                    ALL_UNLOCKED, tier, 5_184_000L, RandomSource.create(100L + tier.ordinal()));
+            HumanLoadoutDefinition definition = HumanLoadoutGenerator.generate(context, true);
+            helper.assertTrue(definition.quality() == ceilings[tier.ordinal()],
+                    "Enchanted egg exceeded or missed the ceiling for " + tier);
+            helper.assertTrue(definition.armorPieces() > 0 && !definition.equipment(EquipmentSlot.MAINHAND).isEmpty(),
+                    "Enchanted egg produced an incomplete loadout for " + tier);
+        }
+
+        java.util.Set<String> rolls = new java.util.HashSet<>();
+        for (int seed = 0; seed < 32; seed++) {
+            LoadoutRollContext context = new LoadoutRollContext(SpawnContext.OVERWORLD_STRUCTURE, Level.OVERWORLD,
+                    ALL_UNLOCKED, CombatSkillTier.T1, 5_184_000L, RandomSource.create(seed));
+            HumanLoadoutDefinition definition = HumanLoadoutGenerator.generate(context, true);
+            rolls.add(definition.equipment(EquipmentSlot.MAINHAND).getItem().toString()
+                    + ":" + definition.equipment(EquipmentSlot.OFFHAND).getItem().toString());
+        }
+        helper.assertTrue(rolls.size() >= 2, "Enchanted egg rolls did not vary across seeds");
+        helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "humanLoadouts", timeoutTicks = 40)
+    public static void spawnEggSpecsCoverTiersAndFactions(GameTestHelper helper) {
+        for (CombatSkillTier tier : CombatSkillTier.values()) {
+            HumanSpawnEggSpec spec = HumanSpawnEggSpec.tier(tier, false);
+            helper.assertTrue(spec.tier() == tier && spec.faction() == null && !spec.enchanted(),
+                    "Tier spawn egg spec is invalid for " + tier);
+            HumanSpawnEggSpec enchanted = HumanSpawnEggSpec.tier(tier, true);
+            helper.assertTrue(enchanted.enchanted(), "Enchanted tier spec lost its profile");
+        }
+        for (PersonaFaction faction : PersonaFaction.values()) {
+            HumanSpawnEggSpec spec = HumanSpawnEggSpec.faction(faction, false);
+            helper.assertTrue(spec.faction() == faction && spec.tier() == null,
+                    "Faction spawn egg spec is invalid for " + faction);
         }
         helper.succeed();
     }

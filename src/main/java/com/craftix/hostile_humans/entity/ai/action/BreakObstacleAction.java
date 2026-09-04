@@ -9,6 +9,7 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -46,15 +47,22 @@ public final class BreakObstacleAction implements TacticalWorldAction {
     private BlockPos findObstacle(WorldActionContext context) {
         Human human = context.human();
         Direction direction = direction(context);
+        BlockPos current = human.blockPosition();
+        if (isBreakable(human, current)) return current;
         BlockPos base = human.blockPosition().relative(direction);
         for (int y = 0; y <= 1; y++) {
             BlockPos candidate = base.above(y);
             if (!human.level().hasChunkAt(candidate)) return null;
-            BlockState state = human.level().getBlockState(candidate);
-            if (state.is(TacticalTags.NAVIGATION_BREAKABLE) && !state.is(TacticalTags.NEVER_BREAK)
-                    && !state.hasBlockEntity() && state.getDestroySpeed(human.level(), candidate) >= 0.0F) return candidate;
+            if (isBreakable(human, candidate)) return candidate;
         }
         return null;
+    }
+
+    private boolean isBreakable(Human human, BlockPos pos) {
+        BlockState state = human.level().getBlockState(pos);
+        return (state.is(Blocks.COBWEB) || state.is(TacticalTags.NAVIGATION_BREAKABLE))
+                && !state.is(TacticalTags.NEVER_BREAK)
+                && !state.hasBlockEntity() && state.getDestroySpeed(human.level(), pos) >= 0.0F;
     }
 
     @Override

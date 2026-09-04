@@ -55,8 +55,13 @@ public final class HumanLoadoutGenerator {
 
     /** Pure with respect to entities/worlds: only registries, stacks and the supplied RNG are used. */
     public static HumanLoadoutDefinition generate(LoadoutRollContext context) {
+        return generate(context, false);
+    }
+
+    /** Generates a fully random roll, optionally using the enchanted-egg power ceiling. */
+    public static HumanLoadoutDefinition generate(LoadoutRollContext context, boolean enchantedEgg) {
         RandomSource random = context.random();
-        Quality quality = rollQuality(context);
+        Quality quality = enchantedEgg ? maximumQualityFor(context.tier()) : rollQuality(context);
         EnumMap<EquipmentSlot, ItemStack> equipment = new EnumMap<>(EquipmentSlot.class);
         List<ItemStack> inventory = new ArrayList<>();
 
@@ -90,15 +95,37 @@ public final class HumanLoadoutGenerator {
 
         addResources(inventory, quality, context, random);
         applyConfiguredNaturalCandidates(equipment, inventory, context, random);
-        enchant(equipment, quality, context);
+        enchant(equipment, quality, context, enchantedEgg);
         validate(equipment, inventory, quality, context, random);
         return new HumanLoadoutDefinition(quality, equipment, inventory);
+    }
+
+    private static Quality maximumQualityFor(CombatSkillTier tier) {
+        return switch (tier) {
+            case T1 -> Quality.NETHERITE;
+            case T2 -> Quality.DIAMOND;
+            case T3, T4 -> Quality.IRON;
+            case T5 -> Quality.SCRAPPY;
+        };
     }
 
     /** Integration entry point; the natural lifecycle supplies the real entity only at apply time. */
     public static void generateAndApply(ServerLevel level, Human human) {
         generateAndApply(level, human, WorldGearProgressionSnapshot.from(com.craftix.hostile_humans.progression.WorldGearProgressionSavedData.get(level)),
                 level.getServer().overworld().getGameTime());
+    }
+
+    /** Applies an enchanted egg roll without inheriting the world's progression locks. */
+    public static void generateAndApply(ServerLevel level, Human human, boolean enchantedEgg) {
+        if (!enchantedEgg) {
+            generateAndApply(level, human);
+            return;
+        }
+        LoadoutRollContext context = new LoadoutRollContext(human.getSpawnContext(), level.dimension(),
+                new WorldGearProgressionSnapshot(true, true, true, true, true),
+                human.getCombatTacticsController().skillTier(), DEFAULT_AGE_CAP, human.getRandom());
+        HumanLoadoutDefinition definition = generate(context, true);
+        definition.applyTo(human);
     }
 
     /** Demonstration/debug entry point that can supply a synthetic progression state. */
@@ -333,7 +360,12 @@ public final class HumanLoadoutGenerator {
     }
 
     private static void enchant(EnumMap<EquipmentSlot, ItemStack> equipment, Quality quality,
-                                LoadoutRollContext context) {
+                                 LoadoutRollContext context) {
+        enchant(equipment, quality, context, false);
+    }
+
+    private static void enchant(EnumMap<EquipmentSlot, ItemStack> equipment, Quality quality,
+                                LoadoutRollContext context, boolean enchantedEgg) {
         double chance = switch (context.tier()) {
             case T1 -> Config.loadoutEnchantChanceT1.get();
             case T2 -> Config.loadoutEnchantChanceT2.get();
@@ -343,9 +375,10 @@ public final class HumanLoadoutGenerator {
         };
         chance += quality.score() * 0.02D + context.ageFactor() * 0.08D;
         if (isNether(context.spawnContext()) || isEnd(context.spawnContext())) chance += 0.08D;
-        chance = clamp(chance);
+        chance = enchantedEgg ? 1.0D : clamp(chance);
         int power = switch (context.tier()) { case T1 -> 28; case T2 -> 22; case T3 -> 16; case T4 -> 11; case T5 -> 7; };
         power += (int) (context.ageFactor() * 8.0D);
+        if (enchantedEgg) power += 15;
         boolean treasure = context.random().nextDouble() < 0.025D + context.ageFactor() * 0.025D;
         for (ItemStack stack : equipment.values()) {
             if (stack.isEmpty() || !stack.isEnchantable() || context.random().nextDouble() >= chance) continue;

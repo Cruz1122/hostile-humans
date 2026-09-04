@@ -40,7 +40,9 @@ public class HumanLookAtPlayerGoal extends Goal {
         this.setFlags(EnumSet.of(Goal.Flag.LOOK));
         if (p_148119_ == Player.class) {
             this.lookAtContext = TargetingConditions.forNonCombat().range((double) p_148120_).selector((p_25531_) -> {
-                return EntitySelector.notRiding(p_148118_).test(p_25531_);
+                return EntitySelector.notRiding(p_148118_).test(p_25531_)
+                        && (!(p_25531_ instanceof Player player)
+                        || (!player.isCreative() && !player.isSpectator()));
             });
         } else {
             this.lookAtContext = TargetingConditions.forNonCombat().range((double) p_148120_);
@@ -68,7 +70,8 @@ public class HumanLookAtPlayerGoal extends Goal {
     }
 
     public boolean canContinueToUse() {
-        if (!this.lookAt.isAlive()) {
+        if (this.lookAt == null || !this.lookAt.isAlive()
+                || this.lookAt instanceof Player player && (player.isCreative() || player.isSpectator())) {
             return false;
         } else if (this.mob.distanceToSqr(this.lookAt) > (double) (this.lookDistance * this.lookDistance)) {
             return false;

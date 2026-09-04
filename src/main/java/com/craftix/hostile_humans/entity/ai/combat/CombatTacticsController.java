@@ -53,7 +53,8 @@ public final class CombatTacticsController {
 
         boolean visible = target != null && human.hasLineOfSight(target);
         double targetDistance = visible ? human.distanceTo(target) : Double.MAX_VALUE;
-        targetBlocking = visible && target.isBlocking();
+        targetBlocking = visible && (target.isBlocking()
+                || target.isUsingItem() && target.getUseItem().canPerformAction(ToolActions.SHIELD_BLOCK));
         visibleDisabler = visible && targetHoldingShieldDisabler(target);
         boolean comboPressure = visible && human.isUnderMeleePressure()
                 && human.consecutiveReceivedCombatHits >= 2;
@@ -83,9 +84,19 @@ public final class CombatTacticsController {
 
         if (targetBlocking && !human.isUsingItem() && Config.enableShieldBreaking.get()
                 && hasShieldDisablerInInventory(target) && targetDistance <= 4.0D) {
+            boolean disablerAlreadyEquipped = human.getMainHandItem().canDisableShield(
+                    target.getUseItem(), target, human);
             return intent = new CombatIntent(CombatTactic.BREAK_SHIELD,
-                    CombatAction.SWITCH_TO_SHIELD_DISABLER, shieldState, false,
+                    disablerAlreadyEquipped ? CombatAction.ATTACK : CombatAction.SWITCH_TO_SHIELD_DISABLER,
+                    shieldState, disablerAlreadyEquipped,
                     projectileThreat, false, true, human.tickCount + 3);
+        }
+
+        if (human.hasSquadAttackOpportunity()) {
+            lowerShield(false);
+            return intent = new CombatIntent(CombatTactic.PRESSURE, CombatAction.ATTACK,
+                    shieldState, true, projectileThreat, visibleDisabler, targetBlocking,
+                    human.tickCount + 1);
         }
 
         if (human.isUsingItem() && human.getUsedItemHand() == InteractionHand.OFF_HAND

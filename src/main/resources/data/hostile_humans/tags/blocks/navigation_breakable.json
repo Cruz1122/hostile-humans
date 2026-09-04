@@ -1,4 +1,4 @@
 {
   "replace": false,
-  "values": ["minecraft:dirt", "minecraft:stone", "minecraft:cobblestone", "minecraft:cobbled_deepslate", "minecraft:oak_planks", "minecraft:spruce_planks", "minecraft:birch_planks", "minecraft:andesite", "minecraft:diorite", "minecraft:granite"]
+  "values": ["minecraft:cobweb", "minecraft:dirt", "minecraft:stone", "minecraft:cobblestone", "minecraft:cobbled_deepslate", "minecraft:oak_planks", "minecraft:spruce_planks", "minecraft:birch_planks", "minecraft:andesite", "minecraft:diorite", "minecraft:granite"]
 }

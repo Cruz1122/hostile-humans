@@ -86,6 +86,46 @@ public final class HumanEquipmentGameTest {
         helper.succeed();
     }
 
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalEquipmentMovement", timeoutTicks = 180)
+    public static void rangedHumanCollectsMeleeWeaponFromDefeatedTarget(GameTestHelper helper) {
+        Human human = createHuman(helper, new BlockPos(1, 1, 2));
+        human.setNoAi(false);
+        human.setCanPickUpLoot(false);
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.BOW));
+        human.getData().setInventoryItem(0, new ItemStack(Items.ARROW, 8));
+        human.targetSelector.removeAllGoals(goal -> true);
+        human.goalSelector.removeAllGoals(goal -> true);
+        human.goalSelector.addGoal(6, new ItemLootGoal(human, 1.0D));
+
+        var defeated = EntityType.ZOMBIE.create(helper.getLevel());
+        if (defeated == null) throw new IllegalStateException("Could not create defeated target");
+        defeated.moveTo(helper.absolutePos(new BlockPos(4, 1, 2)), 180.0F, 0.0F);
+        defeated.setNoAi(true);
+        helper.getLevel().addFreshEntity(defeated);
+        human.setTarget(defeated);
+        defeated.kill();
+        human.setTarget(null);
+
+        ItemEntity droppedWeapon = new ItemEntity(helper.getLevel(),
+                helper.absolutePos(new BlockPos(2, 1, 2)).getX() + 0.5D,
+                helper.absolutePos(new BlockPos(2, 1, 2)).getY(),
+                helper.absolutePos(new BlockPos(2, 1, 2)).getZ() + 0.5D,
+                new ItemStack(Items.DIAMOND_SWORD));
+        droppedWeapon.setPickUpDelay(0);
+        helper.getLevel().addFreshEntity(droppedWeapon);
+
+        ItemLootGoal lootGoal = new ItemLootGoal(human, 1.0D);
+        helper.assertTrue(lootGoal.canUse(), "Ranged Human did not select a nearby melee weapon after its target was defeated");
+        lootGoal.start();
+        human.setPos(droppedWeapon.getX(), droppedWeapon.getY(), droppedWeapon.getZ());
+        lootGoal.tick();
+        helper.assertTrue(droppedWeapon.isRemoved(),
+                "Ranged Human did not collect the useful melee weapon dropped by its defeated target");
+        helper.assertTrue(human.getData().getInventoryItems().stream().anyMatch(stack -> stack.is(Items.DIAMOND_SWORD)),
+                "Ranged Human collected a useful melee weapon but lost it from durable inventory");
+        helper.succeed();
+    }
+
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalEquipment", timeoutTicks = 80)
     public static void sameToolQualityPrefersDiamond(GameTestHelper helper) {
         Human human = createHuman(helper, new BlockPos(2, 1, 2));

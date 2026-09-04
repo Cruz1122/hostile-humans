@@ -88,9 +88,22 @@ public class HostileHumans {
 
     private static void buildCreativeTabContents(BuildCreativeModeTabContentsEvent event) {
         if (event.getTabKey() == CreativeModeTabs.SPAWN_EGGS) {
-            event.accept(ModItems.HUMAN1_SPAWN_EGG);
-            event.accept(ModItems.HUMAN2_SPAWN_EGG);
-            event.accept(ModItems.ROAMER_SPAWN_EGG);
+            event.accept(ModItems.HUMAN_T1_SPAWN_EGG);
+            event.accept(ModItems.HUMAN_T2_SPAWN_EGG);
+            event.accept(ModItems.HUMAN_T3_SPAWN_EGG);
+            event.accept(ModItems.HUMAN_T4_SPAWN_EGG);
+            event.accept(ModItems.HUMAN_T5_SPAWN_EGG);
+            event.accept(ModItems.HISPANIC_SPAWN_EGG);
+            event.accept(ModItems.INTERNATIONAL_SPAWN_EGG);
+            event.accept(ModItems.LEGENDS_SPAWN_EGG);
+            event.accept(ModItems.ENCHANTED_HUMAN_T1_SPAWN_EGG);
+            event.accept(ModItems.ENCHANTED_HUMAN_T2_SPAWN_EGG);
+            event.accept(ModItems.ENCHANTED_HUMAN_T3_SPAWN_EGG);
+            event.accept(ModItems.ENCHANTED_HUMAN_T4_SPAWN_EGG);
+            event.accept(ModItems.ENCHANTED_HUMAN_T5_SPAWN_EGG);
+            event.accept(ModItems.ENCHANTED_HISPANIC_SPAWN_EGG);
+            event.accept(ModItems.ENCHANTED_INTERNATIONAL_SPAWN_EGG);
+            event.accept(ModItems.ENCHANTED_LEGENDS_SPAWN_EGG);
         }
     }
 	

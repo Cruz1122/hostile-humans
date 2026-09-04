@@ -1,11 +1,13 @@
 package com.craftix.hostile_humans.entity.ai.goal;
 
+import com.craftix.hostile_humans.HumanUtil;
 import com.craftix.hostile_humans.entity.ai.survival.SurvivalInventory;
 import com.craftix.hostile_humans.entity.ai.survival.LootCollector;
 import com.craftix.hostile_humans.entity.ai.survival.SurvivalQueryBudget;
 import com.craftix.hostile_humans.entity.ai.survival.SquadNeed;
 import com.craftix.hostile_humans.entity.ai.survival.SquadNeedsEvaluator;
 import com.craftix.hostile_humans.entity.entities.Human;
+import com.craftix.hostile_humans.entity.equipment.MeleeWeaponSelector;
 import com.craftix.hostile_humans.entity.type.human.HumanLootPolicy;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -110,11 +112,16 @@ public final class ItemLootGoal extends Goal {
     private ItemEntity findNearestUsefulItem() {
         AABB searchArea = human.getBoundingBox().inflate(SEARCH_RADIUS, SEARCH_RADIUS / 2.0D, SEARCH_RADIUS);
         boolean needsFood = SquadNeedsEvaluator.evaluate(human).needs(SquadNeed.FOOD);
+        boolean needsMelee = HumanUtil.isRangedWeapon(human.getMainHandItem());
         return human.level().getEntitiesOfClass(ItemEntity.class, searchArea,
                         this::canPickUp)
                 .stream()
                 .filter(this::hasPickupReachablePath)
-                .min(Comparator.comparingInt((ItemEntity item) -> needsFood && item.getItem().getFoodProperties(null) != null ? 0 : 1)
+                .min(Comparator.comparingInt((ItemEntity item) -> {
+                            if (needsMelee && MeleeWeaponSelector.isMeleeCandidate(item.getItem())) return 0;
+                            if (needsFood && item.getItem().getFoodProperties(null) != null) return 1;
+                            return 2;
+                        })
                         .thenComparingDouble(human::distanceToSqr))
                 .orElse(null);
     }

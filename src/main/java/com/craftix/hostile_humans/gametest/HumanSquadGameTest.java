@@ -10,6 +10,10 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
 
@@ -75,6 +79,29 @@ public final class HumanSquadGameTest {
         victim.hurt(helper.getLevel().damageSources().mobAttack(attacker), 1.0F);
 
         helper.assertTrue(defender.getTarget() == attacker, "Damage to a squad member did not alert its defender");
+        cleanup(victim, defender, attacker);
+        helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "squadTactics", timeoutTicks = 40)
+    public static void sharedAggroCreatesAnAttackOpportunity(GameTestHelper helper) {
+        UUID squadId = UUID.randomUUID();
+        Human victim = createHuman(helper, new BlockPos(1, 1, 1), "coldified", squadId);
+        Human defender = createHuman(helper, new BlockPos(3, 1, 1), "juanclean", squadId);
+        Human attacker = createHuman(helper, new BlockPos(5, 1, 1), "technoblade", null);
+        defender.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        defender.startUsingItem(InteractionHand.OFF_HAND);
+
+        victim.hurt(helper.getLevel().damageSources().mobAttack(attacker), 1.0F);
+
+        helper.assertTrue(defender.getTarget() == attacker,
+                "Squad defender did not acquire the enemy attacking its companion");
+        helper.assertTrue(!defender.isUsingItem(),
+                "Squad defender kept covering with a shield after receiving shared aggro");
+        var intent = defender.getCombatTacticsController().evaluate();
+        helper.assertTrue(intent.action() == com.craftix.hostile_humans.entity.ai.combat.CombatAction.ATTACK
+                        && intent.allowMeleeAttack(),
+                "Squad defender did not exploit the shared aggro as an attack opportunity");
         cleanup(victim, defender, attacker);
         helper.succeed();
     }

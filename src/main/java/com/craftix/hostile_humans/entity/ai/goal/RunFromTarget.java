@@ -115,6 +115,7 @@ public class RunFromTarget extends Goal {
 
     public void start() {
         LivingEntity attacker = human.toAvoid;
+        human.interruptSurvivalMovementForCombat();
         human.isFleeing = true;
         human.setTarget(null);
         SquadManager.alertRetreatingAlly(human, attacker);
@@ -137,6 +138,7 @@ public class RunFromTarget extends Goal {
     public void tick() {
 
         if (human.toAvoid == null) return;
+        human.interruptSurvivalMovementForCombat();
         //System.out.println("tick flee");
         human.isFleeing = true;
         if (this.human.distanceToSqr(human.toAvoid) < 7 * 7) {

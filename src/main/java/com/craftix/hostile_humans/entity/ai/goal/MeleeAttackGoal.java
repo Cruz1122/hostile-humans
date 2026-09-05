@@ -5,6 +5,7 @@ import com.craftix.hostile_humans.HumanUtil;
 import com.craftix.hostile_humans.entity.HumanEntity;
 import com.craftix.hostile_humans.entity.entities.Human;
 import com.craftix.hostile_humans.entity.ai.combat.CombatSkillTier;
+import com.craftix.hostile_humans.entity.ai.control.HumanEntityWalkControl;
 import com.craftix.hostile_humans.entity.equipment.MeleeWeaponSelector;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
@@ -124,7 +125,8 @@ public class MeleeAttackGoal extends HumanGoal {
         if (isSit) {
             mob.setOrderedToPosition(mob.getEntityData().get(DATA_SIT_POS));
         } else {
-            mob.getMoveControl().setWantedPosition(mob.position().x(), mob.position().y(), mob.position().z(), 1);
+            mob.getNavigation().stop();
+            if (mob.getMoveControl() instanceof HumanEntityWalkControl moveControl) moveControl.stopMovement();
         }
     }
 

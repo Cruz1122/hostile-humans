@@ -988,9 +988,8 @@ public final class SurvivalProgressionGoal extends Goal {
     private void clearOwnedMovementRequest() {
         human.getNavigation().stop();
         if (human.getMoveControl() instanceof HumanEntityWalkControl moveControl) {
-            // A resource nudge is issued directly to MoveControl. Clear that
-            // one-shot request before another goal can own movement.
-            moveControl.stopMovement();
+            if (moveControl.isSurvivalNudgeActive()) moveControl.cancelSurvivalNudge();
+            else moveControl.stopMovement();
         }
         resourceNudgeTarget = null;
         resourceNudgeTicks = 0;
@@ -1021,6 +1020,7 @@ public final class SurvivalProgressionGoal extends Goal {
 
     /** Gives a stalled resource action a bounded physics-safe advance before timeout recovery. */
     private boolean nudgeTowardLookDirection() {
+        if (!canUseResourceNudge()) return false;
         Vec3 look = human.getViewVector(1.0F);
         double dx = look.x;
         double dz = look.z;
@@ -1044,13 +1044,25 @@ public final class SurvivalProgressionGoal extends Goal {
 
     private void continueResourceNudge() {
         if (resourceNudgeTarget == null || resourceNudgeTicks <= 0) return;
+        if (!canUseResourceNudge()) {
+            clearOwnedMovementRequest();
+            return;
+        }
         human.getNavigation().stop();
-        human.getMoveControl().setWantedPosition(
-                resourceNudgeTarget.x,
-                resourceNudgeTarget.y,
-                resourceNudgeTarget.z,
-                RESOURCE_FORWARD_NUDGE_SPEED);
+        if (human.getMoveControl() instanceof HumanEntityWalkControl moveControl) {
+            moveControl.setSurvivalNudgeWantedPosition(
+                    resourceNudgeTarget.x,
+                    resourceNudgeTarget.y,
+                    resourceNudgeTarget.z,
+                    RESOURCE_FORWARD_NUDGE_SPEED);
+        }
         resourceNudgeTicks--;
+    }
+
+    private boolean canUseResourceNudge() {
+        return mode == Mode.RESOURCE && targetPos != null && breaker == null
+                && activeActionEligible() && !combatMovementActive()
+                && LocalResourceScanner.matches(human.level().getBlockState(targetPos), need);
     }
 
     private int nextDecisionTick() {

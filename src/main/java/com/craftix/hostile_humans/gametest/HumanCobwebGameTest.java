@@ -11,11 +11,13 @@ import net.minecraft.gametest.framework.GameTestHelper;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.AABB;
 import net.minecraftforge.common.util.FakePlayer;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
@@ -150,6 +152,49 @@ public final class HumanCobwebGameTest {
         target.discard();
         human.discard();
         helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalCobweb", timeoutTicks = 120)
+    public static void rangedHumanFiresWhileStandingInCobweb(GameTestHelper helper) {
+        for (int x = 0; x <= 12; x++) {
+            for (int z = 0; z <= 5; z++) {
+                helper.setBlock(new BlockPos(x, 0, z), Blocks.STONE.defaultBlockState());
+                for (int y = 1; y <= 4; y++) helper.setBlock(new BlockPos(x, y, z), Blocks.AIR.defaultBlockState());
+            }
+        }
+        Human human = ModEntityType.HUMAN1.get().create(helper.getLevel());
+        Mob target = net.minecraft.world.entity.EntityType.ZOMBIE.create(helper.getLevel());
+        if (human == null || target == null) throw new IllegalStateException("Could not create ranged cobweb fixture");
+
+        BlockPos humanPos = helper.absolutePos(new BlockPos(2, 1, 2));
+        human.moveTo(humanPos, 0.0F, 0.0F);
+        helper.getLevel().addFreshEntity(human);
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.BOW));
+        human.getData().setInventoryItem(0, new ItemStack(Items.ARROW, 8));
+        target.moveTo(helper.absolutePos(new BlockPos(10, 1, 2)), 180.0F, 0.0F);
+        target.setNoAi(true);
+        helper.getLevel().addFreshEntity(target);
+        human.setTarget(target);
+        human.setCombatTask();
+        helper.getLevel().setBlock(humanPos, Blocks.COBWEB.defaultBlockState(), 3);
+        helper.assertTrue(human.hasLineOfSight(target),
+                "Ranged cobweb fixture did not provide line of sight");
+
+        boolean[] projectileObserved = {false};
+        AABB observationArea = new AABB(humanPos).inflate(20.0D);
+        helper.startSequence().thenExecuteFor(80, () -> {
+            if (!helper.getLevel().getEntitiesOfClass(AbstractArrow.class, observationArea).isEmpty()) {
+                projectileObserved[0] = true;
+            }
+        }).thenExecute(() -> {
+            helper.assertTrue(projectileObserved[0],
+                    "Human with visible target did not create an arrow while standing in cobweb");
+            helper.assertTrue(helper.getLevel().getBlockState(humanPos).is(Blocks.COBWEB),
+                    "Ranged firing position was unnecessarily replaced by cobweb mining");
+            target.discard();
+            human.discard();
+            helper.succeed();
+        });
     }
 
     private static Setup setup(GameTestHelper helper, boolean withCobweb, boolean mobGriefing) {

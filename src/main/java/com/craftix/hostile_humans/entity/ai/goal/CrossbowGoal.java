@@ -1,6 +1,7 @@
 package com.craftix.hostile_humans.entity.ai.goal;
 
 import com.craftix.hostile_humans.entity.HumanEntity;
+import com.craftix.hostile_humans.entity.ai.control.HumanEntityWalkControl;
 import com.craftix.hostile_humans.entity.entities.Human;
 import net.minecraft.util.TimeUtil;
 import net.minecraft.util.valueproviders.UniformInt;
@@ -78,7 +79,8 @@ public class CrossbowGoal<T extends HumanEntity & RangedAttackMob & CrossbowAtta
         if (isSit) {
             mob.setOrderedToPosition(mob.getEntityData().get(DATA_SIT_POS));
         } else {
-            mob.getMoveControl().setWantedPosition(mob.position().x(), mob.position().y(), mob.position().z(), 1);
+            mob.getNavigation().stop();
+            if (mob.getMoveControl() instanceof HumanEntityWalkControl moveControl) moveControl.stopMovement();
         }
     }
 

@@ -16,6 +16,7 @@ import com.craftix.hostile_humans.entity.ai.survival.SurvivalState;
 import com.craftix.hostile_humans.entity.ai.survival.SurvivalTask;
 import com.craftix.hostile_humans.entity.ai.survival.SurvivalObjective;
 import com.craftix.hostile_humans.entity.ai.action.MiningToolSelector;
+import com.craftix.hostile_humans.entity.ai.control.HumanEntityWalkControl;
 import com.craftix.hostile_humans.entity.ai.goal.ItemLootGoal;
 import com.craftix.hostile_humans.entity.ai.goal.InvestigateSoundGoal;
 import com.craftix.hostile_humans.entity.entities.Human;
@@ -1123,7 +1124,7 @@ public final class HumanSurvivalProgressionGameTest {
         human.setYRot(0.0F);
         human.setXRot(0.0F);
 
-        SurvivalProgressionGoal goal = new SurvivalProgressionGoal(human);
+        SurvivalProgressionGoal goal = human.getSurvivalProgressionGoal();
         helper.assertTrue(goal.canUse(), "Diamond gathering action was not selected for movement ownership regression");
         goal.start();
         human.setNoAi(true);
@@ -1132,25 +1133,72 @@ public final class HumanSurvivalProgressionGameTest {
             goal.tick();
         }
 
-        Vec3 beforeCombat = human.position();
+        helper.assertTrue(human.getMoveControl() instanceof HumanEntityWalkControl,
+                "Human did not use its movement ownership controller");
+        HumanEntityWalkControl moveControl = (HumanEntityWalkControl) human.getMoveControl();
+        helper.assertTrue(moveControl.isSurvivalNudgeActive(),
+                "Resource fixture did not activate the direct movement recovery");
         var target = EntityType.COW.create(helper.getLevel());
         helper.assertTrue(target != null, "Combat target could not be created");
         target.moveTo(human.getX(), human.getY(), human.getZ() + 8.0D, 180.0F, 0.0F);
         target.setNoAi(true);
         helper.getLevel().addFreshEntity(target);
         human.setTarget(target);
-        human.setNoAi(false);
+        helper.assertTrue(!moveControl.isSurvivalNudgeActive(),
+                "Combat target acquisition left the resource nudge active");
+        helper.assertTrue(Math.abs(human.getSpeed()) < 0.0001F,
+                "Combat target acquisition retained the resource nudge speed: " + human.getSpeed());
+        helper.assertTrue(human.getDeltaMovement().horizontalDistanceSqr() < 0.0001D,
+                "Combat target acquisition retained resource nudge momentum: " + human.getDeltaMovement());
+        goal.tick();
+        helper.assertTrue(!moveControl.isSurvivalNudgeActive(),
+                "Resource nudge restarted while a combat target was active");
+        goal.stop();
+        target.discard();
+        cleanup(human);
+        helper.succeed();
+    }
 
-        helper.startSequence().thenExecute(() -> {
-            human.getMoveControl().tick();
-            helper.assertTrue(human.position().distanceToSqr(beforeCombat) < 0.0001D,
-                    "Resource nudge movement leaked after combat preemption: before="
-                            + beforeCombat + ", after=" + human.position());
-            goal.stop();
-            target.discard();
-            cleanup(human);
-            helper.succeed();
-        });
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalNavigation", timeoutTicks = 100)
+    public static void resourceNudgeStopsWhenFleeingWithoutTarget(GameTestHelper helper) {
+        Human human = human(helper, new BlockPos(2, 1, 2));
+        expandGround(helper);
+        prepareDiamondNavigator(human);
+        helper.setBlock(new BlockPos(2, 1, 5), Blocks.DIAMOND_ORE.defaultBlockState());
+        human.goalSelector.removeAllGoals(ignored -> true);
+        human.targetSelector.removeAllGoals(ignored -> true);
+        human.setYRot(0.0F);
+        human.setXRot(0.0F);
+
+        SurvivalProgressionGoal goal = human.getSurvivalProgressionGoal();
+        helper.assertTrue(goal.canUse(), "Diamond gathering action was not selected for retreat ownership regression");
+        goal.start();
+        human.setNoAi(true);
+        for (int tick = 0; tick < 25; tick++) {
+            human.getNavigation().stop();
+            goal.tick();
+        }
+
+        HumanEntityWalkControl moveControl = (HumanEntityWalkControl) human.getMoveControl();
+        helper.assertTrue(moveControl.isSurvivalNudgeActive(),
+                "Resource fixture did not activate before retreat");
+        var threat = EntityType.COW.create(helper.getLevel());
+        helper.assertTrue(threat != null, "Retreat threat could not be created");
+        threat.moveTo(human.getX(), human.getY(), human.getZ() + 4.0D, 180.0F, 0.0F);
+        threat.setNoAi(true);
+        helper.getLevel().addFreshEntity(threat);
+        human.toAvoid = threat;
+        human.isFleeing = true;
+        goal.tick();
+
+        helper.assertTrue(!moveControl.isSurvivalNudgeActive(),
+                "Resource nudge remained active after retreat started");
+        helper.assertTrue(Math.abs(human.getSpeed()) < 0.0001F,
+                "Retreat retained the resource nudge speed: " + human.getSpeed());
+        goal.stop();
+        threat.discard();
+        cleanup(human);
+        helper.succeed();
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "survivalNavigation", timeoutTicks = 80)

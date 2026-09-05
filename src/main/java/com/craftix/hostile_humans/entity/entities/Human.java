@@ -21,6 +21,7 @@ import com.craftix.hostile_humans.entity.ai.survival.SurvivalProgressionGoal;
 import com.craftix.hostile_humans.entity.ai.survival.SurvivalSnapshot;
 import com.craftix.hostile_humans.entity.ai.mission.CampMissionController;
 import com.craftix.hostile_humans.entity.equipment.MeleeWeaponSelector;
+import com.craftix.hostile_humans.entity.equipment.RangedWeaponSelector;
 import com.craftix.hostile_humans.entity.loadout.HumanDeathRewardCalculator;
 import com.craftix.hostile_humans.entity.loadout.HumanLoadoutGenerator;
 import com.craftix.hostile_humans.progression.WorldGearProgressionSnapshot;
@@ -123,15 +124,16 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     private static final AttributeModifier CRITICAL_DAMAGE_MODIFIER = new AttributeModifier(
             CRITICAL_DAMAGE_MODIFIER_UUID, "Human critical attack", 0.5D,
             AttributeModifier.Operation.MULTIPLY_TOTAL);
+    private static final float RANGED_ATTACK_RADIUS = 15.0F;
     private static final Map<String, ResourceLocation> TEXTURE_BY_VARIANT = Util.make(Maps.newHashMap(), hashMap -> {
         for (int i = 1; i <= 37; i++) {
             String name = "skin" + i;
             hashMap.put(name, ResourceLocation.fromNamespaceAndPath(HostileHumans.MOD_ID, "textures/entity/human/" + name + ".png"));
         }
     });
-    private final CrossbowGoal<Human> crossbowAttackGoal = new CrossbowGoal<>(this, 1D, 15.0F);
+    private final CrossbowGoal<Human> crossbowAttackGoal = new CrossbowGoal<>(this, 1D, RANGED_ATTACK_RADIUS);
     private final TridentAttackGoal tridentGoal = new TridentAttackGoal(this, 1.0D, 40, 15.0F);
-    private final BowAttack<Human> bowAttackGoal = new BowAttack<>(this, 1D, 80, 15.0F);
+    private final BowAttack<Human> bowAttackGoal = new BowAttack<>(this, 1D, 80, RANGED_ATTACK_RADIUS);
     private final MeleeAttackGoal meleeAttackGoal = new MeleeAttackGoal(this, 1.05D, true);
     public int shieldCoolDown;
     public int shieldUpTicks;
@@ -462,6 +464,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
                 setTarget(attacker);
             } else {
                 this.toAvoid = attacker;
+                interruptSurvivalMovementForCombat();
             }
             if (!this.level().isClientSide) {
                 SquadManager.shareTarget(this, attacker, this.isFleeing
@@ -715,9 +718,8 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         if (slotIn == EquipmentSlot.MAINHAND && !evaluatingEquipment) {
             equipmentDirty = true;
         }
-        if (!this.level().isClientSide && !stack.isEmpty()) {
-            if (evaluatingEquipment) this.setCombatTask();
-            else this.queueEquipmentReevaluation();
+        if (!this.level().isClientSide && !stack.isEmpty() && !evaluatingEquipment) {
+            this.queueEquipmentReevaluation();
         }
     }
 
@@ -898,12 +900,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
         if (livingEntity != null && previousTarget == null) {
             cobwebsPlacedThisCombat = 0;
-            if (!this.level().isClientSide && this.survivalProgressionGoal != null) {
-                // Target acquisition can happen after survival's tick but
-                // before MoveControl runs. Stop its direct resource nudge
-                // immediately instead of waiting for GoalSelector.stop().
-                this.survivalProgressionGoal.interruptForCombat();
-            }
+            interruptSurvivalMovementForCombat();
         }
 
         if (this.level().isClientSide) {
@@ -922,6 +919,17 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             // The discoverer keeps a stronger commitment; recipients get lower-priority shared aggro.
             SquadManager.shareTarget(this, livingEntity, SquadAlertReason.SHARED_AGGRO);
         }
+    }
+
+    /** Immediately releases survival-owned movement before combat or retreat takes over. */
+    public void interruptSurvivalMovementForCombat() {
+        if (!this.level().isClientSide && this.survivalProgressionGoal != null) {
+            this.survivalProgressionGoal.interruptForCombat();
+        }
+    }
+
+    public SurvivalProgressionGoal getSurvivalProgressionGoal() {
+        return this.survivalProgressionGoal;
     }
 
     @Nullable
@@ -1437,11 +1445,11 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             }
         }
         super.tick();
-        if (this.usefulInventoryEquipmentQueued) {
+        if (this.usefulInventoryEquipmentQueued && canProcessPassiveEquipment()) {
             this.usefulInventoryEquipmentQueued = false;
             this.equipUsefulInventoryItems();
         }
-        if (this.equipmentReevaluationQueued) {
+        if (this.equipmentReevaluationQueued && canReevaluateWeapons()) {
             this.equipmentReevaluationQueued = false;
             this.reevaluateEquipment();
         }
@@ -1864,14 +1872,16 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         }
 
         if (handItem.isEmpty()) {
-            if (!equipWeapon(HumanUtil::isTrident)) equipWeapon(HumanUtil::isMeleeWeapon);
+            if (!equipWeapon(HumanUtil::isTrident)) {
+                if (!RangedWeaponSelector.equipBest(this)) equipWeapon(HumanUtil::isMeleeWeapon);
+            }
             return;
         }
 
         LivingEntity target = getTarget();
         if (target == null) {
             if (tickCount % (20 * 10) == 0 && switchingWeaponCoolDown == 0) {
-                equipWeapon(HumanUtil::isRangedWeapon);
+                RangedWeaponSelector.equipBest(this);
             }
             return;
         }
@@ -1882,7 +1892,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
                 && Math.floorMod(getId(), 100) < 20;
         if (!forcedMelee && distance >= 8.0F && !isUnderMeleePressure()
                 && !HumanUtil.isRangedWeapon(handItem)) {
-            if (equipWeapon(HumanUtil::isRangedWeapon)) switchingWeaponCoolDown = 40;
+            if (RangedWeaponSelector.equipBest(this)) switchingWeaponCoolDown = 40;
         } else if ((forcedMelee || distance <= 5.0F)
                 && HumanUtil.isRangedWeapon(handItem)) {
             reevaluateEquipment();
@@ -1912,10 +1922,41 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     }
 
     public void equipUsefulInventoryItems() {
-        if (level().isClientSide || getTarget() != null || getData() == null || miningToolLockTicks > 0) return;
+        if (!canProcessPassiveEquipment()) return;
+        equipBestShield();
         for (int slot = 0; slot < getData().getInventoryItemsSize(); slot++) {
             equipItemIfPossible(getData().getInventoryItem(slot));
         }
+    }
+
+    private void equipBestShield() {
+        ItemStack current = getOffhandItem();
+        if (!current.isEmpty() && !HumanUtil.isShield(current)) return;
+        double bestScore = HumanUtil.isShield(current) ? defensiveItemScore(current) : -1.0D;
+        int bestSlot = -1;
+        for (int slot = 0; slot < getData().getInventoryItemsSize(); slot++) {
+            ItemStack candidate = getData().getInventoryItem(slot);
+            if (!HumanUtil.isShield(candidate) || !MeleeWeaponSelector.usable(candidate)) continue;
+            double score = defensiveItemScore(candidate);
+            if (score > bestScore) {
+                bestScore = score;
+                bestSlot = slot;
+            }
+        }
+        if (bestSlot < 0) return;
+        ItemStack selected = getData().getInventoryItem(bestSlot).copy();
+        setItemSlot(EquipmentSlot.OFFHAND, selected);
+        getData().setInventoryItem(bestSlot, current.copy());
+    }
+
+    private static double defensiveItemScore(ItemStack stack) {
+        int enchantmentLevels = EnchantmentHelper.getEnchantments(stack).values().stream()
+                .mapToInt(Integer::intValue)
+                .sum();
+        double durability = stack.getMaxDamage() == 0
+                ? 1.0D
+                : (double) (stack.getMaxDamage() - stack.getDamageValue()) / stack.getMaxDamage();
+        return enchantmentLevels * 100.0D + durability;
     }
 
     public void queueUsefulInventoryEquipment() {
@@ -1923,14 +1964,29 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     }
 
     public void reevaluateEquipment() {
-        if (level().isClientSide || evaluatingEquipment || isUsingItem()
-                || isFleeing || getData() == null || miningToolLockTicks > 0) {
-            return;
-        }
+        if (!canReevaluateWeapons()) return;
         evaluatingEquipment = true;
         try {
-            MobType targetType = getTarget() == null ? MobType.UNDEFINED : getTarget().getMobType();
-            if (MeleeWeaponSelector.equipBest(this, targetType)) {
+            LivingEntity target = getTarget();
+            MobType targetType = target == null ? MobType.UNDEFINED : target.getMobType();
+            ItemStack before = getMainHandItem().copy();
+            boolean useRanged = target != null && hasLineOfSight(target)
+                    && target.distanceTo(this) >= 8.0F && !isUnderMeleePressure();
+            boolean forceMelee = target != null
+                    && (target.distanceTo(this) <= 5.0F || isUnderMeleePressure());
+
+            if (useRanged) {
+                if (!RangedWeaponSelector.equipBest(this)) {
+                    MeleeWeaponSelector.equipBest(this, targetType);
+                }
+            } else if (forceMelee || !HumanUtil.isRangedWeapon(getMainHandItem())) {
+                MeleeWeaponSelector.equipBest(this, targetType);
+            } else {
+                if (!RangedWeaponSelector.equipBest(this)) {
+                    MeleeWeaponSelector.equipBest(this, targetType);
+                }
+            }
+            if (!ItemStack.matches(before, getMainHandItem())) {
                 switchingWeaponCoolDown = Math.max(switchingWeaponCoolDown, 20);
             }
             // Ranged weapons are valid current equipment too. Rebuild the combat
@@ -1941,6 +1997,14 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         } finally {
             evaluatingEquipment = false;
         }
+    }
+
+    private boolean canProcessPassiveEquipment() {
+        return !level().isClientSide && !isUsingItem() && getData() != null && miningToolLockTicks <= 0;
+    }
+
+    private boolean canReevaluateWeapons() {
+        return canProcessPassiveEquipment() && !evaluatingEquipment && !isFleeing;
     }
 
     public CombatIntent getCombatIntent() {
@@ -2057,12 +2121,8 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     @Override
     public ItemStack equipItemIfPossible(ItemStack stack) {
-        if (getTarget() != null) return ItemStack.EMPTY;
-
         EquipmentSlot equipmentslot = getEquipmentSlotForItem(stack);
         boolean wearableOrWeapon = equipmentslot.getType() == EquipmentSlot.Type.ARMOR
-                || HumanUtil.isRangedWeapon(stack) || HumanUtil.isShield(stack)
-                || HumanUtil.isTrident(stack) || MeleeWeaponSelector.isMeleeCandidate(stack)
                 || stack.is(Items.TOTEM_OF_UNDYING);
         // Vanilla assigns ordinary items to MAINHAND. Survival materials such
         // as logs, coal, ore and food must remain in inventory so crafting and
@@ -2156,6 +2216,13 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             if (stored.getItem() instanceof ArrowItem && stored.getCount() > 0) return true;
         }
         return false;
+    }
+
+    /** Ranged combat already has a valid firing position and does not need world-navigation recovery. */
+    public boolean canHoldRangedCombatPosition(LivingEntity target) {
+        return target != null && target.isAlive() && HumanUtil.isRangedWeapon(getMainHandItem())
+                && hasProjectileForWeapon(getMainHandItem()) && hasLineOfSight(target)
+                && distanceToSqr(target) <= RANGED_ATTACK_RADIUS * RANGED_ATTACK_RADIUS;
     }
 
     @Override

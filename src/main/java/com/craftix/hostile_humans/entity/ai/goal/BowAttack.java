@@ -1,6 +1,7 @@
 package com.craftix.hostile_humans.entity.ai.goal;
 
 import com.craftix.hostile_humans.entity.HumanEntity;
+import com.craftix.hostile_humans.entity.ai.control.HumanEntityWalkControl;
 import com.craftix.hostile_humans.entity.entities.Human;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
@@ -69,13 +70,15 @@ public class BowAttack<T extends HumanEntity & RangedAttackMob> extends Goal {
         this.mob.setAggressive(false);
         this.seeTime = 0;
         this.attackTime = -1;
+        this.updatePathDelay = 0;
         this.mob.stopUsingItem();
 
         boolean isSit = mob.isOrderedToSit();
         if (isSit) {
             mob.setOrderedToPosition(mob.getEntityData().get(DATA_SIT_POS));
         } else {
-            mob.getMoveControl().setWantedPosition(mob.position().x(), mob.position().y(), mob.position().z(), 1);
+            mob.getNavigation().stop();
+            if (mob.getMoveControl() instanceof HumanEntityWalkControl moveControl) moveControl.stopMovement();
         }
     }
 
@@ -103,11 +106,17 @@ public class BowAttack<T extends HumanEntity & RangedAttackMob> extends Goal {
                 --this.seeTime;
             }
 
-            if (!(d0 > (double) this.attackRadiusSqr) && this.seeTime >= 20) {
+            boolean hasFiringPosition = d0 <= (double) this.attackRadiusSqr && flag;
+            if (hasFiringPosition) {
                 this.mob.getNavigation().stop();
-                ++this.strafingTime;
+                if (this.seeTime >= 20) ++this.strafingTime;
+                else this.strafingTime = -1;
+                this.updatePathDelay = 0;
             } else {
-                this.mob.getNavigation().moveTo(livingentity, this.speedModifier);
+                if (--this.updatePathDelay <= 0) {
+                    this.mob.getNavigation().moveTo(livingentity, this.speedModifier);
+                    this.updatePathDelay = 8 + this.mob.getRandom().nextInt(5);
+                }
                 this.strafingTime = -1;
             }
 

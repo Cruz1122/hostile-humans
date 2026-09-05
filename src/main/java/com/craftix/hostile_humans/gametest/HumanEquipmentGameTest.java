@@ -13,8 +13,10 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.MobSpawnType;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.AABB;
@@ -83,6 +85,79 @@ public final class HumanEquipmentGameTest {
         human.markEquipmentDirty();
         human.reevaluateEquipment();
         helper.assertTrue(human.getMainHandItem().is(Items.DIAMOND_SWORD), "Human did not equip picked-up primary weapon");
+        helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalEquipment", timeoutTicks = 80)
+    public static void combatReconciliationEquipsMeleeArmorAndShieldUpgrades(GameTestHelper helper) {
+        Human human = createHuman(helper, new BlockPos(2, 1, 2));
+        Zombie target = EntityType.ZOMBIE.create(helper.getLevel());
+        if (target == null) throw new IllegalStateException("Could not create equipment target");
+        target.moveTo(helper.absolutePos(new BlockPos(4, 1, 2)), 180.0F, 0.0F);
+        target.setNoAi(true);
+        helper.getLevel().addFreshEntity(target);
+
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
+        human.setItemSlot(EquipmentSlot.HEAD, new ItemStack(Items.IRON_HELMET));
+        ItemStack damagedShield = new ItemStack(Items.SHIELD);
+        damagedShield.setDamageValue(damagedShield.getMaxDamage() - 2);
+        human.setItemSlot(EquipmentSlot.OFFHAND, damagedShield);
+        human.getData().setInventoryItem(0, new ItemStack(Items.DIAMOND_SWORD));
+        human.getData().setInventoryItem(1, new ItemStack(Items.DIAMOND_HELMET));
+        human.getData().setInventoryItem(2, new ItemStack(Items.SHIELD));
+        human.setTarget(target);
+
+        human.equipUsefulInventoryItems();
+        human.markEquipmentDirty();
+        human.reevaluateEquipment();
+
+        helper.assertTrue(human.getMainHandItem().is(Items.DIAMOND_SWORD),
+                "Combat reconciliation did not equip the melee upgrade");
+        helper.assertTrue(human.getItemBySlot(EquipmentSlot.HEAD).is(Items.DIAMOND_HELMET),
+                "Combat reconciliation did not equip the armor upgrade");
+        helper.assertTrue(human.getOffhandItem().is(Items.SHIELD)
+                        && human.getOffhandItem().getDamageValue() == 0,
+                "Combat reconciliation did not equip the shield upgrade");
+        helper.assertTrue(human.getData().getInventoryItems().stream().anyMatch(stack -> stack.is(Items.IRON_SWORD)),
+                "Melee upgrade lost the previously equipped weapon");
+        helper.assertTrue(human.getData().getInventoryItems().stream().anyMatch(stack -> stack.is(Items.IRON_HELMET)),
+                "Armor upgrade lost the previously equipped armor");
+        helper.assertTrue(human.getData().getInventoryItems().stream().anyMatch(stack -> stack.is(Items.SHIELD)
+                        && stack.getDamageValue() == damagedShield.getDamageValue()),
+                "Shield upgrade lost the previously equipped shield");
+        target.discard();
+        human.discard();
+        helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalEquipment", timeoutTicks = 80)
+    public static void distantCombatTargetEquipsBestRangedUpgrade(GameTestHelper helper) {
+        Human human = createHuman(helper, new BlockPos(2, 1, 2));
+        Zombie target = EntityType.ZOMBIE.create(helper.getLevel());
+        if (target == null) throw new IllegalStateException("Could not create ranged equipment target");
+        target.moveTo(helper.absolutePos(new BlockPos(12, 1, 2)), 180.0F, 0.0F);
+        target.setNoAi(true);
+        helper.getLevel().addFreshEntity(target);
+
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
+        human.getData().setInventoryItem(0, new ItemStack(Items.BOW));
+        ItemStack upgradedBow = new ItemStack(Items.BOW);
+        upgradedBow.enchant(Enchantments.POWER_ARROWS, 2);
+        human.getData().setInventoryItem(1, upgradedBow);
+        human.getData().setInventoryItem(2, new ItemStack(Items.ARROW, 8));
+        human.setTarget(target);
+        human.tickCount = 100;
+        human.switchingWeaponCoolDown = 0;
+        human.markEquipmentDirty();
+        human.reevaluateEquipment();
+
+        helper.assertTrue(human.getMainHandItem().is(Items.BOW)
+                        && human.getMainHandItem().getEnchantmentLevel(Enchantments.POWER_ARROWS) == 2,
+                "Distant combat reconciliation did not equip the best ranged upgrade");
+        helper.assertTrue(human.getData().getInventoryItems().stream().anyMatch(stack -> stack.is(Items.IRON_SWORD)),
+                "Ranged upgrade lost the previously equipped melee weapon");
+        target.discard();
+        human.discard();
         helper.succeed();
     }
 
@@ -245,7 +320,7 @@ public final class HumanEquipmentGameTest {
     }
 
     private static Human createHuman(GameTestHelper helper, BlockPos localPos) {
-        for (int x = 0; x <= 5; x++) {
+        for (int x = 0; x <= 12; x++) {
             for (int z = 0; z <= 5; z++) {
                 helper.setBlock(new BlockPos(x, 0, z), Blocks.STONE.defaultBlockState());
                 for (int y = 1; y <= 3; y++) helper.setBlock(new BlockPos(x, y, z), Blocks.AIR.defaultBlockState());

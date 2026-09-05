@@ -139,6 +139,7 @@ public class AvoidCreeperGoal extends Goal {
 
     public void start() {
         if (this.mob instanceof Human human) {
+            human.interruptSurvivalMovementForCombat();
             human.isFleeing = true;
             human.toAvoid = this.toAvoid;
         }
@@ -157,6 +158,7 @@ public class AvoidCreeperGoal extends Goal {
 
     public void tick() {
         if (this.mob instanceof Human human) {
+            human.interruptSurvivalMovementForCombat();
             human.isFleeing = true;
             human.toAvoid = this.toAvoid;
         }

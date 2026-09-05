@@ -37,6 +37,11 @@ public final class TacticalWorldActionController {
             return;
         }
         LivingEntity target = human.getTarget();
+        if (human.canHoldRangedCombatPosition(target)) {
+            stop(WorldActionResult.PREEMPTED_BY_HIGH_PRIORITY);
+            failedTicks = 0;
+            return;
+        }
         BlockPos objective = target == null ? CampMissionController.worldActionObjective(human) : null;
         if ((target == null || !target.isAlive()) && objective == null) {
             stop(WorldActionResult.ABORTED);

@@ -18,6 +18,7 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 
 public class HumanEntityWalkControl extends MoveControl {
     private final Human human;
+    private boolean survivalNudgeActive;
 
     public HumanEntityWalkControl(Mob mob) {
         super(mob);
@@ -35,10 +36,37 @@ public class HumanEntityWalkControl extends MoveControl {
         this.strafeRight = 0.0F;
         this.mob.setZza(0.0F);
         this.mob.setXxa(0.0F);
+        this.mob.setSpeed(0.0F);
+    }
+
+    /** Issues the short resource-recovery movement without losing ownership of it. */
+    public void setSurvivalNudgeWantedPosition(double x, double y, double z, double speed) {
+        this.survivalNudgeActive = true;
+        this.setWantedPosition(x, y, z, speed);
+    }
+
+    /** Cancels only movement produced by the resource-recovery action. */
+    public void cancelSurvivalNudge() {
+        if (!this.survivalNudgeActive) return;
+        this.survivalNudgeActive = false;
+        this.stopMovement();
+    }
+
+    public boolean isSurvivalNudgeActive() {
+        return this.survivalNudgeActive;
     }
 
     @Override
     public void tick() {
+        boolean consumingSurvivalNudge = this.survivalNudgeActive;
+        try {
+            tickMovement();
+        } finally {
+            if (consumingSurvivalNudge) this.survivalNudgeActive = false;
+        }
+    }
+
+    private void tickMovement() {
         if (!this.mob.level().isClientSide) prepareCombatMovement();
         if (!this.mob.onGround() && this.operation == MoveControl.Operation.MOVE_TO) {
             this.operation = MoveControl.Operation.JUMPING;
@@ -221,6 +249,8 @@ public class HumanEntityWalkControl extends MoveControl {
                 && !this.human.isHolding(HumanUtil::isRangedWeapon)
                 && !HumanUtil.isTrident(this.human.getMainHandItem())
                 && this.human.distanceTo(target) >= 7.0F));
-        this.human.setSprinting(shouldSprint);
+        if (this.human.isSprinting() != shouldSprint) {
+            this.human.setSprinting(shouldSprint);
+        }
     }
 }

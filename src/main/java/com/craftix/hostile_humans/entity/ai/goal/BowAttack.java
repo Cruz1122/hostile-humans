@@ -93,6 +93,10 @@ public class BowAttack<T extends HumanEntity & RangedAttackMob> extends Goal {
         }
         LivingEntity livingentity = this.mob.getTarget();
         if (livingentity != null) {
+            if (this.mob instanceof Human human && human.handleRangedMeleeFallback(livingentity)) {
+                this.strafingTime = -1;
+                return;
+            }
             double d0 = this.mob.distanceToSqr(livingentity.getX(), livingentity.getY(), livingentity.getZ());
             boolean flag = this.mob.getSensing().hasLineOfSight(livingentity);
             boolean flag1 = this.seeTime > 0;

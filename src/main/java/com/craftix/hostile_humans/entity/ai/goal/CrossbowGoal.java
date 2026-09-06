@@ -97,6 +97,12 @@ public class CrossbowGoal<T extends HumanEntity & RangedAttackMob & CrossbowAtta
         }
         LivingEntity livingentity = this.mob.getTarget();
         if (livingentity != null) {
+            if (this.mob instanceof Human human && human.handleRangedMeleeFallback(livingentity)) {
+                this.crossbowState = UNCHARGED;
+                this.attackDelay = 0;
+                this.mob.setChargingCrossbow(false);
+                return;
+            }
             boolean flag = this.mob.getSensing().hasLineOfSight(livingentity);
             boolean flag1 = this.seeTime > 0;
             if (flag != flag1) {

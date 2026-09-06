@@ -195,8 +195,9 @@ public class HumanEntityWalkControl extends MoveControl {
             this.strafeForwards = human.getCombatIntent().allowMeleeAttack() ? 0.55F : -0.45F;
             this.strafeRight = action == CombatAction.STRAFE_LEFT ? 0.35F : -0.35F;
         }
-        this.speedModifier = human.getCombatIntent().tactic() == com.craftix.hostile_humans.entity.ai.combat.CombatTactic.DISENGAGE
-                ? 1.15D : 0.85D;
+        // Combat evasions should change direction, not grant an implicit speed
+        // effect. Retreat goals own the actual sprint speed when a human is fleeing.
+        this.speedModifier = 0.85D;
         this.operation = MoveControl.Operation.STRAFE;
     }
 

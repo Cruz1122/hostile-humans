@@ -1,6 +1,7 @@
 package com.craftix.hostile_humans.entity.ai.combat;
 
 import com.craftix.hostile_humans.Config;
+import com.craftix.hostile_humans.HumanUtil;
 import com.craftix.hostile_humans.entity.entities.Human;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
@@ -55,6 +56,11 @@ public final class CombatTacticsController {
         double targetDistance = visible ? human.distanceTo(target) : Double.MAX_VALUE;
         targetBlocking = visible && (target.isBlocking()
                 || target.isUsingItem() && target.getUseItem().canPerformAction(ToolActions.SHIELD_BLOCK));
+        boolean targetIsRangedAttacker = visible
+                && HumanUtil.isRangedWeapon(target.getMainHandItem())
+                && (target.isUsingItem() || targetDistance >= 6.0D);
+        boolean aggressiveMeleePursuit = targetIsRangedAttacker
+                && HumanUtil.isMeleeWeapon(human.getMainHandItem());
         visibleDisabler = visible && targetHoldingShieldDisabler(target);
         boolean comboPressure = visible && human.isUnderMeleePressure()
                 && human.consecutiveReceivedCombatHits >= 2;
@@ -67,6 +73,37 @@ public final class CombatTacticsController {
             if (comboPressure) return comboEscapeIntent(false);
             return intent = new CombatIntent(CombatTactic.PRESSURE, CombatAction.ATTACK,
                     shieldState, true, projectileThreat, visibleDisabler, targetBlocking, human.tickCount + 1);
+        }
+
+        // A ranged fighter may carry a shield as backup equipment, but raising it
+        // while the bow/crossbow is equipped makes the unit effectively immune to
+        // the other NPCs' ranged fire. Keep the shield available for a later melee
+        // loadout without letting it become a permanent projectile bunker.
+        if (HumanUtil.isRangedWeapon(human.getMainHandItem())) {
+            lowerShield(false);
+            return intent = new CombatIntent(CombatTactic.PRESSURE, CombatAction.ATTACK,
+                    ShieldState.READY, true, projectileThreat, visibleDisabler, targetBlocking,
+                    human.tickCount + 1);
+        }
+
+        // Do not let projectile pressure turn a melee NPC into a stationary
+        // shield wall. A ranged attacker is a priority target: lower the shield
+        // and let the melee goal own movement so it closes the distance.
+        if (aggressiveMeleePursuit) {
+            lowerShield(false);
+            return intent = new CombatIntent(CombatTactic.PRESSURE, CombatAction.ATTACK,
+                    shieldState, true, projectileThreat, visibleDisabler, targetBlocking,
+                    human.tickCount + 1);
+        }
+
+        // Once a visible target cannot block, there is no reason to spend the
+        // combat decision on a shield-breaking setup. Keep an already active
+        // defensive window intact, but otherwise let melee pressure own the
+        // decision immediately. This also covers an axe-created shield cooldown.
+        if (target != null && targetShieldUnavailable(target)) {
+            return intent = new CombatIntent(CombatTactic.PRESSURE, CombatAction.ATTACK,
+                    currentShieldState(), true, projectileThreat, visibleDisabler,
+                    targetBlocking, human.tickCount + 1);
         }
 
         if (human.shieldDisabledUntilTick > human.tickCount) {
@@ -246,6 +283,20 @@ public final class CombatTacticsController {
         ItemStack shield = human.getOffhandItem();
         ItemStack weapon = target.getMainHandItem();
         return !weapon.isEmpty() && weapon.canDisableShield(shield, human, target);
+    }
+
+    private boolean targetShieldUnavailable(LivingEntity target) {
+        if (!hasUsableShield(target)) return true;
+        if (target instanceof Human targetHuman) {
+            return targetHuman.shieldDisabledUntilTick > targetHuman.tickCount;
+        }
+        return target instanceof net.minecraft.world.entity.player.Player player
+                && player.getCooldowns().isOnCooldown(net.minecraft.world.item.Items.SHIELD);
+    }
+
+    private boolean hasUsableShield(LivingEntity target) {
+        return target.getMainHandItem().canPerformAction(ToolActions.SHIELD_BLOCK)
+                || target.getOffhandItem().canPerformAction(ToolActions.SHIELD_BLOCK);
     }
 
     private boolean hasShieldDisablerInInventory(LivingEntity target) {

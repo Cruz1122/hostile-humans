@@ -3,6 +3,7 @@ package com.craftix.hostile_humans.event;
 import com.craftix.hostile_humans.compat.CollectiveVillagerNames;
 import com.craftix.hostile_humans.compat.FarmersDelight;
 import com.craftix.hostile_humans.entity.entities.Human;
+import com.craftix.hostile_humans.entity.loadout.HumanLoadoutGenerator;
 import com.craftix.hostile_humans.entity.equipment.MeleeWeaponSelector;
 //import com.natamus.villagernames_common_forge.util.Names;
 
@@ -15,6 +16,7 @@ import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.event.entity.living.LivingDamageEvent;
 import net.minecraftforge.event.server.ServerStartedEvent;
@@ -136,6 +138,15 @@ public class EventHandler {
             }
         }
         if (entity instanceof Human human) {
+            if (entity.getTags().contains("hh_team_arena") && human.getPersonaId().isEmpty()) {
+                human.assignRandomPersona();
+            }
+            if (entity.level() instanceof ServerLevel serverLevel
+                    && entity.getTags().contains("hh_team_arena")
+                    && java.util.Arrays.stream(EquipmentSlot.values())
+                    .allMatch(slot -> human.getItemBySlot(slot).isEmpty())) {
+                HumanLoadoutGenerator.generateAndApply(serverLevel, human);
+            }
             if (human.getPersonaId().isEmpty() && ModList.get().isLoaded("villagernames")) {
                 CollectiveVillagerNames.nameEntity(human);
             }

@@ -3,6 +3,7 @@ package com.craftix.hostile_humans.gametest;
 import com.craftix.hostile_humans.entity.ai.combat.CombatSkillTier;
 import com.craftix.hostile_humans.entity.ai.combat.CombatAction;
 import com.craftix.hostile_humans.entity.ai.combat.CombatIntent;
+import com.craftix.hostile_humans.entity.ai.combat.CombatTactic;
 import com.craftix.hostile_humans.entity.ai.combat.ShieldState;
 import com.craftix.hostile_humans.entity.ai.goal.MeleeAttackGoal;
 import com.craftix.hostile_humans.entity.entities.Human;
@@ -17,12 +18,14 @@ import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.monster.Zombie;
+import net.minecraft.world.entity.projectile.Arrow;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.common.util.FakePlayer;
 import net.minecraftforge.gametest.GameTestHolder;
 import net.minecraftforge.gametest.PrefixGameTestTemplate;
@@ -118,6 +121,132 @@ public final class HumanShieldGameTest {
                     rangedWeapon.getItem() + " left the aiming movement penalty active after release");
         }
         human.discard();
+        helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 40)
+    public static void rangedLoadoutDoesNotHideBehindShield(GameTestHelper helper) {
+        Human human = createHuman(helper);
+        Zombie target = createZombie(helper, new BlockPos(4, 1, 2));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.BOW));
+        human.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        human.setTarget(target);
+        human.startUsingItem(InteractionHand.OFF_HAND);
+
+        CombatIntent intent = human.getCombatTacticsController().evaluate();
+
+        helper.assertTrue(intent.allowMeleeAttack(),
+                "A ranged loadout with a shield was incorrectly converted into a permanent bunker");
+        helper.assertTrue(!human.isUsingItem(),
+                "A ranged loadout kept its shield raised instead of remaining attackable");
+        helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 40)
+    public static void shieldLoadoutSuppressesProjectileKnockback(GameTestHelper helper) {
+        Human target = createHuman(helper);
+        Human shooter = createHuman(helper);
+        target.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        target.startUsingItem(InteractionHand.OFF_HAND);
+        target.setDeltaMovement(0.12D, 0.0D, -0.08D);
+        Arrow arrow = new Arrow(helper.getLevel(), shooter);
+        target.setYRot(0.0F);
+        arrow.moveTo(target.getX(), target.getEyeY(), target.getZ() + 2.0D, 0.0F, 0.0F);
+        helper.getLevel().addFreshEntity(arrow);
+
+        Vec3 expected = target.getDeltaMovement();
+        float healthBefore = target.getHealth();
+        boolean hurt = target.hurt(helper.getLevel().damageSources().arrow(arrow, shooter), 1.0F);
+
+        Vec3 actual = target.getDeltaMovement();
+        helper.assertTrue(!hurt && target.getHealth() == healthBefore,
+                "A shielded NPC took projectile damage instead of reflecting the arrow");
+        helper.assertTrue(Math.abs(actual.x - expected.x) < 0.0001D
+                        && Math.abs(actual.z - expected.z) < 0.0001D,
+                "A projectile applied knockback to an NPC carrying a shield");
+        helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 40)
+    public static void meleeNpcChasesRangedAttackerInsteadOfHoldingShield(GameTestHelper helper) {
+        Human melee = createHuman(helper);
+        Human ranged = createHuman(helper);
+        melee.addTag("hh_team_arena");
+        melee.addTag("hh_team_red");
+        ranged.addTag("hh_team_arena");
+        ranged.addTag("hh_team_blue");
+        ranged.moveTo(helper.absolutePos(new BlockPos(10, 1, 2)), 180.0F, 0.0F);
+        melee.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
+        melee.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        ranged.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.BOW));
+        ranged.startUsingItem(InteractionHand.MAIN_HAND);
+        melee.setTarget(ranged);
+        melee.startUsingItem(InteractionHand.OFF_HAND);
+
+        CombatIntent intent = melee.getCombatTacticsController().evaluate();
+
+        helper.assertTrue(intent.action() == CombatAction.ATTACK && intent.allowMeleeAttack(),
+                "A melee NPC did not switch to aggressive pursuit of a ranged attacker");
+        helper.assertTrue(!melee.isUsingItem(),
+                "A melee NPC kept its shield raised while its ranged target was attacking");
+        helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 40)
+    public static void rangedOnlyNpcMeleesThenJumpsAwayAtCloseRange(GameTestHelper helper) {
+        Human human = createHuman(helper);
+        Zombie target = createZombie(helper, new BlockPos(4, 1, 2));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.BOW));
+        human.setTarget(target);
+        float healthBefore = target.getHealth();
+
+        boolean handled = human.handleRangedMeleeFallback(target);
+
+        helper.assertTrue(handled && target.getHealth() < healthBefore,
+                "A ranged-only NPC did not perform its close-range melee fallback");
+        helper.assertTrue(human.getDeltaMovement().y >= 0.42D,
+                "The ranged NPC did not jump away after its close-range hit");
+        helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 40)
+    public static void unshieldedTargetTriggersImmediateMeleePressure(GameTestHelper helper) {
+        Human human = createHuman(helper);
+        Zombie target = createZombie(helper, new BlockPos(4, 1, 2));
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
+        human.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        human.setTarget(target);
+
+        CombatIntent intent = human.getCombatTacticsController().evaluate();
+
+        helper.assertTrue(intent.tactic() == CombatTactic.PRESSURE
+                        && intent.action() == CombatAction.ATTACK
+                        && intent.allowMeleeAttack(),
+                "A target without a shield did not trigger immediate melee pressure");
+        helper.assertTrue(intent.shieldState() == ShieldState.READY,
+                "An available NPC shield was incorrectly consumed by unshielded-target pressure");
+        helper.succeed();
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 40)
+    public static void disabledTargetShieldTriggersImmediateMeleePressure(GameTestHelper helper) {
+        Human human = createHuman(helper);
+        Human target = createHuman(helper);
+        helper.assertTrue(human.setPersonaId("coldified"), "Could not reserve attacker persona");
+        helper.assertTrue(target.setPersonaId("technoblade"), "Could not reserve target persona");
+        target.moveTo(helper.absolutePos(new BlockPos(4, 1, 2)), 180.0F, 0.0F);
+        target.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        target.shieldDisabledUntilTick = target.tickCount + 100;
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
+        human.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+        human.setTarget(target);
+
+        CombatIntent intent = human.getCombatTacticsController().evaluate();
+
+        helper.assertTrue(intent.action() == CombatAction.ATTACK && intent.allowMeleeAttack(),
+                "A target with an axe-disabled shield did not trigger immediate melee pressure");
+        helper.assertTrue(intent.shieldState() == ShieldState.READY,
+                "An available NPC shield was incorrectly consumed by disabled-target pressure");
         helper.succeed();
     }
 
@@ -229,6 +358,7 @@ public final class HumanShieldGameTest {
         Human human = createHuman(helper);
         Zombie target = createZombie(helper, new BlockPos(4, 1, 2));
         target.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_SWORD));
+        target.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
         human.setCombatSkillTierOverride(CombatSkillTier.T1);
         human.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
         human.setTarget(target);
@@ -260,6 +390,7 @@ public final class HumanShieldGameTest {
         Human human = createHuman(helper);
         Zombie target = createZombie(helper, new BlockPos(4, 1, 2));
         target.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.IRON_AXE));
+        target.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
         human.setCombatSkillTierOverride(CombatSkillTier.T1);
         human.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
         human.setTarget(target);
@@ -441,6 +572,7 @@ public final class HumanShieldGameTest {
         Zombie target = createZombie(helper, new BlockPos(10, 1, 2));
         human.setNoAi(false);
         human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.CROSSBOW));
+        human.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
         human.getData().setInventoryItem(0, new ItemStack(Items.ARROW, 8));
         human.setTarget(target);
         float initialHealth = target.getHealth();

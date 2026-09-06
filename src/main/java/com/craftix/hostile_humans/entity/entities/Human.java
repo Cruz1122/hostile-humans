@@ -206,6 +206,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     private boolean pendingDrinkCleanup;
     public boolean isFleeing;
     public long lastCombatTime;
+    private int rangedMeleeRetreatUntilTick;
     @Nullable
     public LivingEntity toAvoid;
     // Investigate Sound
@@ -451,6 +452,20 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     @Override
     public boolean hurt(@NotNull DamageSource damageSource, float amount) {
+        if (damageSource.getDirectEntity() instanceof Projectile projectile
+                && isUsingItem()
+                && getUseItem().canPerformAction(net.minecraftforge.common.ToolActions.SHIELD_BLOCK)) {
+            // Vanilla's shield path can still leave custom mobs with the
+            // projectile's hit impulse. Handle the block at the trust boundary:
+            // no damage, no target reaction, and the projectile goes back toward
+            // its owner exactly like a reflected vanilla arrow.
+            projectile.setDeltaMovement(projectile.getDeltaMovement().scale(-1.0D));
+            projectile.setOwner(this);
+            hasImpulse = false;
+            return false;
+        }
+        Vec3 movementBeforeProjectileHit = damageSource.getDirectEntity() instanceof Projectile
+                && HumanUtil.isShield(getOffhandItem()) ? getDeltaMovement() : null;
         lastCombatTime = tickCount;
 
         if (damageSource.getEntity() instanceof LivingEntity attacker && attacker != this && this.canAttack(attacker)) {
@@ -488,13 +503,61 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
                 }
             }
         }
-        return super.hurt(damageSource, amount);
+        boolean hurt = super.hurt(damageSource, amount);
+        if (movementBeforeProjectileHit != null) {
+            // A shield in the loadout should prevent projectile hit-stagger even
+            // when vanilla rejects the damage because the NPC is actively blocking.
+            Vec3 movementAfterHit = getDeltaMovement();
+            setDeltaMovement(movementBeforeProjectileHit.x, movementAfterHit.y, movementBeforeProjectileHit.z);
+            hasImpulse = false;
+        }
+        return hurt;
     }
 
     public boolean isUnderMeleePressure() {
         if (lastReceivedCombatHitTick == Integer.MIN_VALUE) return false;
         int ticksSinceHit = tickCount - lastReceivedCombatHitTick;
         return ticksSinceHit >= 0 && ticksSinceHit <= 14;
+    }
+
+    /**
+     * Gives a ranged-only loadout a close-quarters fallback instead of letting
+     * the ranged goal orbit an enemy at zero distance. The hit is followed by a
+     * short jump away, after which the ranged goal can establish distance again.
+     */
+    public boolean handleRangedMeleeFallback(LivingEntity target) {
+        if (!HumanUtil.isRangedWeapon(getMainHandItem()) || target == null || !target.isAlive()
+                || distanceToSqr(target) > 6.25D) {
+            return false;
+        }
+
+        getNavigation().stop();
+        if (tickCount < rangedMeleeRetreatUntilTick) {
+            return true;
+        }
+
+        stopUsingItem();
+        if (getMainHandItem().getItem() instanceof CrossbowItem) {
+            CrossbowItem.setCharged(getMainHandItem(), false);
+        }
+        doHurtTarget(target);
+
+        double awayX = getX() - target.getX();
+        double awayZ = getZ() - target.getZ();
+        double length = Math.sqrt(awayX * awayX + awayZ * awayZ);
+        if (length > 1.0E-4D) {
+            awayX /= length;
+            awayZ /= length;
+        } else {
+            awayX = 0.0D;
+            awayZ = -1.0D;
+        }
+        getJumpControl().jump();
+        Vec3 movement = getDeltaMovement();
+        setDeltaMovement(awayX * 0.34D, Math.max(movement.y, 0.42D), awayZ * 0.34D);
+        rangedMeleeRetreatUntilTick = tickCount + 18;
+        lastCombatTime = tickCount;
+        return true;
     }
 
     public UUID getPersistentAngerTarget() {
@@ -562,6 +625,14 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     public void setCombatTask() {
         if (!level().isClientSide) {
+            // Rebuilding goals while a crossbow is charging (or waiting to fire)
+            // calls CrossbowGoal.stop(), which resets its state to UNCHARGED and
+            // makes a shield-equipped ranged NPC reload forever.
+            if (getMainHandItem().getItem() instanceof CrossbowItem
+                    && (isUsingItem() && getUseItem().getItem() instanceof CrossbowItem
+                    || CrossbowItem.isCharged(getMainHandItem()))) {
+                return;
+            }
 
             goalSelector.removeGoal(bowAttackGoal);
             goalSelector.removeGoal(meleeAttackGoal);
@@ -1107,6 +1178,10 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     }
 
     public static boolean areAllies(Human first, Human second) {
+        if (first.getTags().contains("hh_team_arena") && second.getTags().contains("hh_team_arena")) {
+            return first.getTags().contains("hh_team_red") && second.getTags().contains("hh_team_red")
+                    || first.getTags().contains("hh_team_blue") && second.getTags().contains("hh_team_blue");
+        }
         Optional<PersonaDefinition> firstPersona = first.getPersonaDefinition();
         Optional<PersonaDefinition> secondPersona = second.getPersonaDefinition();
         if (firstPersona.isPresent() && secondPersona.isPresent()) {
@@ -1161,7 +1236,11 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     }
 
     private void applyPersona(PersonaDefinition definition) {
-        setCustomName(Component.literal(definition.displayName()));
+        String displayName = definition.displayName();
+        if (getTags().contains("hh_team_arena")) {
+            displayName += " [" + getCombatTacticsController().skillTier().name() + "]";
+        }
+        setCustomName(Component.literal(displayName));
         setCustomNameVisible(true);
     }
 

@@ -98,6 +98,8 @@ public final class ProgressiveBlockBreaker {
         human.suppressSurvivalSounds(2);
         tool.getItem().mineBlock(tool, human.level(), expected, pos, human);
         if (!human.level().destroyBlock(pos, false, human, Block.UPDATE_LIMIT)) return abort();
+        LocalResourceScanner.invalidate(human);
+        SquadNeedsEvaluator.invalidate(human);
         if (human.level() instanceof ServerLevel serverLevel && obtainsDrops) {
             // Keep vanilla-calculated loot, but eject it beside the miner with
             // no pickup delay. Spawning at the old block cell made both exposed

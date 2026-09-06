@@ -30,6 +30,7 @@ public final class FurnaceOperation {
                 furnace.setItem(2, output);
                 furnace.setChanged();
                 SquadNeedsEvaluator.invalidate(human);
+                LocalResourceScanner.invalidate(human);
                 human.markEquipmentDirty();
                 human.queueEquipmentReevaluation();
                 return Result.RETRIEVED;
@@ -56,6 +57,7 @@ public final class FurnaceOperation {
         fuel.shrink(fuelUnits);
         furnace.setChanged();
         SquadNeedsEvaluator.invalidate(human);
+        LocalResourceScanner.invalidate(human);
         return Result.INSERTED;
     }
 

@@ -86,6 +86,7 @@ public final class SurvivalProgressionGoal extends Goal {
     private int stationInteractionCooldownTicks;
     private final Map<BlockPos, Integer> failedResourceUntil = new HashMap<>();
     private final Map<net.minecraft.world.level.block.Block, Optional<BlockPos>> stationCache = new HashMap<>();
+    private final Map<net.minecraft.world.level.block.Block, Boolean> nearbyStationCache = new HashMap<>();
     private int stationCacheTick = Integer.MIN_VALUE;
     private String lastDebugSignature;
     private int nextDebugHeartbeatTick;
@@ -111,7 +112,8 @@ public final class SurvivalProgressionGoal extends Goal {
         // A preempting goal may temporarily own MOVE. Keep the selected action
         // instead of rebuilding the whole plan after every such interruption.
         if (controller.isSuspended()) return resumableAction();
-        if (human.tickCount < nextDecisionTick || !controller.requestAssessment()) return false;
+        if (human.tickCount < nextDecisionTick) return false;
+        if (!controller.requestAssessment()) return false;
         failedResourceUntil.entrySet().removeIf(entry -> entry.getValue() <= human.tickCount);
         nextDecisionTick = nextDecisionTick();
         controller.beginPlanning();
@@ -818,6 +820,7 @@ public final class SurvivalProgressionGoal extends Goal {
     private Optional<BlockPos> findStation(net.minecraft.world.level.block.Block block) {
         if (stationCacheTick != human.tickCount) {
             stationCache.clear();
+            nearbyStationCache.clear();
             stationCacheTick = human.tickCount;
         }
         Optional<BlockPos> cached = stationCache.get(block);
@@ -825,7 +828,7 @@ public final class SurvivalProgressionGoal extends Goal {
         int radius = Config.resourceScanRadius.get();
         BlockPos origin = human.blockPosition();
         Optional<BlockPos> result = BlockPos.betweenClosedStream(origin.offset(-radius, -4, -radius), origin.offset(radius, 4, radius))
-                .filter(human.level()::hasChunkAt)
+                .filter(pos -> human.level().getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4) != null)
                 .filter(pos -> human.level().getBlockState(pos).is(block))
                 .filter(pos -> !SurvivalClaimManager.stationClaimedByOther(human, pos))
                 .filter(pos -> stationReachable(pos))
@@ -836,13 +839,22 @@ public final class SurvivalProgressionGoal extends Goal {
     }
 
     private boolean hasNearbyStation(net.minecraft.world.level.block.Block block) {
+        if (stationCacheTick != human.tickCount) {
+            stationCache.clear();
+            nearbyStationCache.clear();
+            stationCacheTick = human.tickCount;
+        }
+        Boolean cached = nearbyStationCache.get(block);
+        if (cached != null) return cached;
         int radius = Config.resourceScanRadius.get();
         BlockPos origin = human.blockPosition();
-        return BlockPos.betweenClosedStream(origin.offset(-radius, -4, -radius), origin.offset(radius, 4, radius))
-                .filter(human.level()::hasChunkAt)
+        boolean result = BlockPos.betweenClosedStream(origin.offset(-radius, -4, -radius), origin.offset(radius, 4, radius))
+                .filter(pos -> human.level().getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4) != null)
                 .filter(pos -> human.level().getBlockState(pos).is(block))
                 .filter(pos -> !SurvivalClaimManager.stationClaimedByOther(human, pos))
                 .anyMatch(this::withinStationInteractionRange);
+        nearbyStationCache.put(block, result);
+        return result;
     }
 
     private boolean stationReachable(BlockPos station) {
@@ -859,7 +871,7 @@ public final class SurvivalProgressionGoal extends Goal {
     private List<BlockPos> stationInteractionPositions(BlockPos station) {
         return BlockPos.betweenClosedStream(station.offset(-1, -1, -1), station.offset(1, 1, 1))
                 .filter(pos -> Math.abs(pos.getX() - station.getX()) + Math.abs(pos.getZ() - station.getZ()) == 1)
-                .filter(human.level()::hasChunkAt)
+                .filter(pos -> human.level().getChunkSource().getChunkNow(pos.getX() >> 4, pos.getZ() >> 4) != null)
                 .filter(pos -> human.level().getBlockState(pos).getCollisionShape(human.level(), pos).isEmpty())
                 .filter(pos -> human.level().getBlockState(pos.above()).getCollisionShape(human.level(), pos.above()).isEmpty())
                 .filter(pos -> !human.level().getBlockState(pos.below())

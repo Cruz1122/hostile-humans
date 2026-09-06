@@ -110,6 +110,7 @@ public final class SurvivalRecipeService {
         human.queueUsefulInventoryEquipment();
         human.queueEquipmentReevaluation();
         SquadNeedsEvaluator.invalidate(human);
+        LocalResourceScanner.invalidate(human);
         return Optional.of(output.copy());
     }
 

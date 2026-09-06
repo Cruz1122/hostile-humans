@@ -21,6 +21,7 @@ public final class LootCollector {
         human.queueUsefulInventoryEquipment();
         human.queueEquipmentReevaluation();
         SquadNeedsEvaluator.invalidate(human);
+        LocalResourceScanner.invalidate(human);
         return inserted;
     }
 }

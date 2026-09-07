@@ -15,7 +15,8 @@
     "ThrownTridentMix",
     "WalkNodeMix",
     "WorldGenRegionMix",
-    "BlockMixin"
+    "BlockMixin",
+    "ForgeGameTestFilterMix"
   ],
   "client": [
     "StructureBlockRenderMix"

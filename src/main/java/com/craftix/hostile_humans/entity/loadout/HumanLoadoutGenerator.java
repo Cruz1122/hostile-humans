@@ -86,6 +86,7 @@ public final class HumanLoadoutGenerator {
 
         int foodCount = foodCount(context);
         add(inventory, new ItemStack(foodFor(context, random), foodCount));
+        addCombatPotions(inventory, context, random);
         if (random.nextDouble() < utilityChance(context)) addTaggedFallback(inventory, Items.COBWEB, SPAWN_UTILITY, 1 + random.nextInt(3), random);
         if (random.nextDouble() < pearlChance(context)) addTaggedFallback(inventory, Items.ENDER_PEARL, SPAWN_UTILITY, 1 + random.nextInt(4), random);
         if (random.nextDouble() < waterBucketChance(context)) addTaggedFallback(inventory, Items.WATER_BUCKET, SPAWN_UTILITY, 1, random);
@@ -492,6 +493,20 @@ public final class HumanLoadoutGenerator {
     }
 
     private static int foodCount(LoadoutRollContext c) { return 8 + (int) (tierStrength(c.tier()) * 12) + c.random().nextInt(5); }
+    private static void addCombatPotions(List<ItemStack> inventory, LoadoutRollContext c, RandomSource random) {
+        if (random.nextDouble() < clamp(0.18D + tierStrength(c.tier()) * 0.20D)) {
+            add(inventory, PotionUtils.setPotion(new ItemStack(Items.POTION),
+                    random.nextBoolean() ? Potions.SWIFTNESS : Potions.STRENGTH));
+        }
+        if (random.nextDouble() < clamp(0.12D + tierStrength(c.tier()) * 0.16D)) {
+            add(inventory, PotionUtils.setPotion(new ItemStack(Items.POTION),
+                    random.nextBoolean() ? Potions.HEALING : Potions.REGENERATION));
+        }
+        if (random.nextDouble() < clamp(0.04D + tierStrength(c.tier()) * 0.10D)) {
+            add(inventory, PotionUtils.setPotion(new ItemStack(Items.SPLASH_POTION),
+                    random.nextBoolean() ? Potions.SWIFTNESS : Potions.STRENGTH));
+        }
+    }
     private static int arrowCount(LoadoutRollContext c) { return 8 + (int) (tierStrength(c.tier()) * 18) + c.random().nextInt(5); }
     private static double rangedChance(LoadoutRollContext c) { return clamp(0.22D + tierStrength(c.tier()) * 0.28D + (isNether(c.spawnContext()) || isEnd(c.spawnContext()) ? 0.15D : 0.0D) + c.ageFactor() * 0.10D); }
     private static double shieldChance(LoadoutRollContext c) { return clamp((isEnd(c.spawnContext()) ? Config.loadoutShieldEndChance.get() : isNether(c.spawnContext()) ? Config.loadoutShieldNetherChance.get() : Config.loadoutShieldOverworldChance.get()) + tierStrength(c.tier()) * 0.18D + (c.spawnContext() == SpawnContext.BASTION || c.spawnContext() == SpawnContext.END_CITY ? 0.08D : 0.0D)); }
@@ -508,8 +523,8 @@ public final class HumanLoadoutGenerator {
         return clamp(Config.loadoutWaterBucketChance.get() + tierStrength(c.tier()) * 0.08D
                 + (isNether(c.spawnContext()) || isEnd(c.spawnContext()) ? 0.04D : 0.0D));
     }
-    private static double goldenAppleChance(LoadoutRollContext c) { return clamp(0.04D + tierStrength(c.tier()) * 0.10D + c.ageFactor() * 0.08D + (isEnd(c.spawnContext()) ? 0.08D : 0.0D)); }
-    private static double notchAppleChance(LoadoutRollContext c) { return clamp(0.002D + tierStrength(c.tier()) * 0.008D + c.ageFactor() * 0.006D + (c.spawnContext() == SpawnContext.END_CITY ? 0.012D : 0.0D)); }
+    private static double goldenAppleChance(LoadoutRollContext c) { return clamp(0.12D + tierStrength(c.tier()) * 0.18D + c.ageFactor() * 0.10D + (isEnd(c.spawnContext()) ? 0.10D : 0.0D)); }
+    private static double notchAppleChance(LoadoutRollContext c) { return clamp(0.01D + tierStrength(c.tier()) * 0.025D + c.ageFactor() * 0.015D + (c.spawnContext() == SpawnContext.END_CITY ? 0.025D : 0.0D)); }
     private static double totemChance(LoadoutRollContext c) {
         double base = isEnd(c.spawnContext()) ? Config.loadoutTotemEndChance.get() : 0.004D;
         if (c.progression().endVisited()) base += Config.loadoutPostEndTotemBoost.get();

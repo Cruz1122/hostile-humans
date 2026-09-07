@@ -109,6 +109,7 @@ public class HumanUtil {
         }
         if (human.toAvoid != null || human.isFleeing) return false;
         if (human.getTarget() != null) {
+            if (human.hasCombatConsumableAvailable()) return true;
             if (isLowHp(human)) {
                 human.shouldStartFleeingThisCombat();
             }

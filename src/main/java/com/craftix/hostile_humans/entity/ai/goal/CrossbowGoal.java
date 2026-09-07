@@ -147,6 +147,10 @@ public class CrossbowGoal<T extends HumanEntity & RangedAttackMob & CrossbowAtta
                 ItemStack itemstack = this.mob.getUseItem();
                 if (i >= CrossbowItem.getChargeDuration(itemstack)) {
                     this.mob.releaseUsingItem();
+                    // Human has custom item-use bookkeeping. Keep the vanilla
+                    // crossbow state explicit so the goal cannot start a new
+                    // charge cycle before the firing state is reached.
+                    CrossbowItem.setCharged(itemstack, true);
                     this.crossbowState = CHARGED;
                     this.attackDelay = 20 + this.mob.getRandom().nextInt(20);
                     this.mob.setChargingCrossbow(false);

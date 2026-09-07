@@ -27,7 +27,8 @@ public final class PillarUpAction implements TacticalWorldAction {
         if (!Config.enablePillaring.get() || WorldActionSupport.critical(human) || target == null && context.objective() == null || target != null && !target.isAlive()
                 || placed == 0 && targetY <= human.getY() + 1.0D
                 || targetY - human.getY() > Config.maxPillarHeight.get()
-                || human.distanceToSqr(target) > 25.0D || placed >= Config.maxPillarBlocksPerPursuit.get()
+                || targetY <= human.getY() + 1.0D && human.distanceToSqr(target) > 25.0D
+                || placed >= Config.maxPillarBlocksPerPursuit.get()
                 || !WorldActionSupport.permitted(human) || WorldActionSupport.constructionStack(human, false).isEmpty()) return false;
         BlockPos head = human.blockPosition().above(2);
         return human.level().hasChunkAt(head) && human.level().getBlockState(head).getCollisionShape(human.level(), head).isEmpty();

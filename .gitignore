@@ -35,6 +35,14 @@ run/
 /media/
 runs/junit/junit_test_args.txt
 runs/junit/junit_jvm_args.txt
+
+# Local Forge/GameTest server runtime files
+/eula.txt
+/server.properties
+/libraries/
+/logs/
+/versions/
+
 .omx
 .windsurf
 .trae

@@ -12,6 +12,9 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.phys.HitResult;
 
 import java.util.Optional;
 import com.craftix.hostile_humans.entity.ai.survival.ProgressiveBlockBreaker;
@@ -46,6 +49,14 @@ public final class BreakObstacleAction implements TacticalWorldAction {
 
     private BlockPos findObstacle(WorldActionContext context) {
         Human human = context.human();
+        LivingEntity target = human.getTarget();
+        if (target != null && !human.hasLineOfSight(target)) {
+            BlockHitResult hit = human.level().clip(new ClipContext(human.getEyePosition(), target.getEyePosition(),
+                    ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, human));
+            if (hit.getType() == HitResult.Type.BLOCK && isMineableObstacle(human, hit.getBlockPos())) {
+                return hit.getBlockPos();
+            }
+        }
         Direction direction = direction(context);
         BlockPos current = human.blockPosition();
         if (isBreakable(human, current)) return current;
@@ -63,6 +74,12 @@ public final class BreakObstacleAction implements TacticalWorldAction {
         return (state.is(Blocks.COBWEB) || state.is(TacticalTags.NAVIGATION_BREAKABLE))
                 && !state.is(TacticalTags.NEVER_BREAK)
                 && !state.hasBlockEntity() && state.getDestroySpeed(human.level(), pos) >= 0.0F;
+    }
+
+    private boolean isMineableObstacle(Human human, BlockPos pos) {
+        BlockState state = human.level().getBlockState(pos);
+        return !state.isAir() && !state.is(TacticalTags.NEVER_BREAK) && !state.hasBlockEntity()
+                && state.getDestroySpeed(human.level(), pos) >= 0.0F && !state.liquid();
     }
 
     @Override

@@ -160,7 +160,7 @@ public class BowAttack<T extends HumanEntity & RangedAttackMob> extends Goal {
                         this.attackTime = this.attackIntervalMin;
                     }
                 }
-            } else if (--this.attackTime <= 0 && this.seeTime >= -60) {
+            } else if (--this.attackTime <= 0 && flag && this.seeTime >= 0) {
                 this.mob.startUsingItem(ProjectileUtil.getWeaponHoldingHand(this.mob, item -> item instanceof BowItem));
             }
         }

@@ -44,6 +44,15 @@ public final class MeleeWeaponSelector {
         return isPrimary(stack) || (Config.enableFallbackToolWeapons.get() && isFallback(stack));
     }
 
+    /** Whether an offered melee item is a real upgrade over the current hand item. */
+    public static boolean isBetterMelee(ItemStack offered, ItemStack current, MobType targetType) {
+        if (!isMeleeCandidate(offered)) return false;
+        if (!isMeleeCandidate(current)) return true;
+        return Candidate.ORDER.compare(
+                new Candidate(0, offered, score(offered, targetType, isPrimary(offered))),
+                new Candidate(-1, current, score(current, targetType, isPrimary(current)))) < 0;
+    }
+
     public static boolean usable(ItemStack stack) {
         return !stack.isEmpty() && (stack.getMaxDamage() == 0
                 || stack.getDamageValue() < stack.getMaxDamage() - 1);

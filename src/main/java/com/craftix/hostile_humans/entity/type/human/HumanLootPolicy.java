@@ -10,6 +10,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.ProjectileWeaponItem;
+import net.minecraft.world.item.PotionItem;
 import net.minecraft.world.item.TieredItem;
 import net.minecraft.world.item.Items;
 import net.minecraft.tags.ItemTags;
@@ -26,6 +27,7 @@ public final class HumanLootPolicy {
                 || HumanUtil.isShield(stack)) return true;
         if (human.isFood(stack) || isRawAnimalFood(stack)
                 || stack.is(Items.COBWEB) || stack.getItem() instanceof ArrowItem) return true;
+        if (stack.getItem() instanceof PotionItem) return true;
         EquipmentSlot equipmentSlot = LivingEntity.getEquipmentSlotForItem(stack);
         if (equipmentSlot.getType() == EquipmentSlot.Type.ARMOR
                 || stack.is(Items.TOTEM_OF_UNDYING)) return true;

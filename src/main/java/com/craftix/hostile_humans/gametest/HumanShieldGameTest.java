@@ -20,6 +20,7 @@ import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.monster.Zombie;
 import net.minecraft.world.entity.projectile.Arrow;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.GameType;
@@ -582,6 +583,44 @@ public final class HumanShieldGameTest {
                 .thenExecute(() -> helper.assertTrue(target.getHealth() < initialHealth,
                         "Human equipped a crossbow but never fired a bolt"))
                 .thenExecute(helper::succeed);
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 80)
+    public static void goldenApplesApplyVanillaEffects(GameTestHelper helper) {
+        Human human = createHuman(helper);
+        human.setHealth(human.getMaxHealth() / 2.0F);
+        human.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(Items.ENCHANTED_GOLDEN_APPLE));
+        human.startUsingItem(InteractionHand.MAIN_HAND);
+
+        helper.startSequence()
+                .thenIdle(40)
+                .thenExecute(() -> {
+                    helper.assertTrue(human.hasEffect(MobEffects.ABSORPTION),
+                            "Enchanted golden apple did not apply absorption");
+                    helper.assertTrue(human.hasEffect(MobEffects.REGENERATION),
+                            "Enchanted golden apple did not apply regeneration");
+                    helper.assertTrue(human.hasEffect(MobEffects.DAMAGE_RESISTANCE),
+                            "Enchanted golden apple did not apply resistance");
+                    helper.succeed();
+                });
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 40)
+    public static void totemPreventsLethalDamage(GameTestHelper helper) {
+        Human human = createHuman(helper);
+        human.setHealth(1.0F);
+        human.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.TOTEM_OF_UNDYING));
+
+        boolean hurt = human.hurt(helper.getLevel().damageSources().generic(), 100.0F);
+
+        helper.assertTrue(!hurt && human.isAlive(), "Totem did not prevent lethal damage");
+        helper.assertTrue(human.hasEffect(MobEffects.REGENERATION),
+                "Totem did not apply regeneration");
+        helper.assertTrue(human.hasEffect(MobEffects.ABSORPTION),
+                "Totem did not apply absorption");
+        helper.assertTrue(human.getOffhandItem().isEmpty(), "Totem was not consumed");
+        human.discard();
+        helper.succeed();
     }
 
     @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "shieldTactics", timeoutTicks = 40)

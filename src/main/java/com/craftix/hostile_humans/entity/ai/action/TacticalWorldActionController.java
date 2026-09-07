@@ -30,13 +30,18 @@ public final class TacticalWorldActionController {
 
     public void tick() {
         if (human.level().isClientSide) return;
+        LivingEntity target = human.getTarget();
+        if (target != null && target.isAlive()
+                && (!human.hasLineOfSight(target) || target.getY() > human.getY() + 1.0D)
+                && human.isUsingItem()) {
+            human.stopUsingItem();
+        }
         if (retryCooldown > 0) retryCooldown--;
         if (WorldActionSupport.critical(human)) {
             stop(WorldActionResult.PREEMPTED_BY_HIGH_PRIORITY);
             failedTicks = 0;
             return;
         }
-        LivingEntity target = human.getTarget();
         if (human.canHoldRangedCombatPosition(target)) {
             stop(WorldActionResult.PREEMPTED_BY_HIGH_PRIORITY);
             failedTicks = 0;

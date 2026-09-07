@@ -1,14 +1,11 @@
 package com.craftix.hostile_humans.entity.ai.goal;
 
-import com.craftix.hostile_humans.HumanUtil;
-import com.craftix.hostile_humans.entity.ai.survival.SurvivalInventory;
 import com.craftix.hostile_humans.entity.ai.survival.LootCollector;
 import com.craftix.hostile_humans.entity.ai.survival.SurvivalQueryBudget;
 import com.craftix.hostile_humans.entity.ai.survival.SquadNeed;
 import com.craftix.hostile_humans.entity.ai.survival.SquadNeedsEvaluator;
 import com.craftix.hostile_humans.entity.entities.Human;
 import com.craftix.hostile_humans.entity.equipment.MeleeWeaponSelector;
-import com.craftix.hostile_humans.entity.type.human.HumanLootPolicy;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.phys.AABB;
@@ -106,20 +103,27 @@ public final class ItemLootGoal extends Goal {
 
     private boolean eligible() {
         return human.isAlive() && !human.isSleepingOrLyingDown() && !human.isOrderedToSit()
-                && human.getTarget() == null && !human.isFleeing && human.healingAfterFleeTicks <= 0;
+                && !human.isFleeing && human.healingAfterFleeTicks <= 0;
+    }
+
+    private boolean inCombat() {
+        return human.getTarget() != null;
     }
 
     private ItemEntity findNearestUsefulItem() {
         AABB searchArea = human.getBoundingBox().inflate(SEARCH_RADIUS, SEARCH_RADIUS / 2.0D, SEARCH_RADIUS);
         boolean needsFood = SquadNeedsEvaluator.evaluate(human).needs(SquadNeed.FOOD);
-        boolean needsMelee = HumanUtil.isRangedWeapon(human.getMainHandItem());
+        // Keep survival/crafting collection from being pre-empted by every
+        // tool drop. A ranged or empty hand still makes a melee candidate the
+        // highest-priority pickup.
+        boolean needsMelee = inCombat();
         return human.level().getEntitiesOfClass(ItemEntity.class, searchArea,
                         this::canPickUp)
                 .stream()
                 .filter(this::hasPickupReachablePath)
                 .min(Comparator.comparingInt((ItemEntity item) -> {
                             if (needsMelee && MeleeWeaponSelector.isMeleeCandidate(item.getItem())) return 0;
-                            if (needsFood && item.getItem().getFoodProperties(null) != null) return 1;
+                            if (!needsMelee && needsFood && item.getItem().getFoodProperties(null) != null) return 1;
                             return 2;
                         })
                         .thenComparingDouble(human::distanceToSqr))
@@ -143,8 +147,7 @@ public final class ItemLootGoal extends Goal {
 
     private boolean canPickUp(ItemEntity item) {
         return item.isAlive() && !isTemporarilyIgnored(item)
-                && HumanLootPolicy.isUseful(human, item.getItem())
-                && SurvivalInventory.canStore(human, item.getItem());
+                && LootCollector.canCollect(human, item.getItem());
     }
 
     private boolean isTemporarilyIgnored(ItemEntity item) {

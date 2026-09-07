@@ -5,6 +5,7 @@ import com.craftix.hostile_humans.persona.PersonaFaction;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -56,6 +57,32 @@ public final class SquadManager {
     public static void alertRetreatingAlly(Human retreating, @Nullable LivingEntity attacker) {
         if (attacker == null || !retreating.isFleeing || !validThreat(retreating, attacker)) return;
         shareTarget(retreating, attacker, SquadAlertReason.PROTECT_RETREATING_ALLY);
+    }
+
+    /** A squad may use a beneficial splash potion once its active combat group is together. */
+    public static boolean readyForCombatSplash(Human source) {
+        LivingEntity target = source.getTarget();
+        if (target == null || source.getSquadId() == null) return false;
+        if (combatSplashHolder(source) != source) return false;
+        List<Human> members = nearbyMembers(source);
+        if (members.isEmpty()) return false;
+        return members.stream().allMatch(member -> member.getTarget() == target
+                && member.distanceToSqr(source) <= 16.0D);
+    }
+
+    @Nullable
+    public static Human combatSplashHolder(Human source) {
+        if (source.hasCombatSplashAvailable()) return source;
+        return nearbyMembers(source).stream()
+                .filter(Human::hasCombatSplashAvailable)
+                .min(java.util.Comparator.comparingDouble(source::distanceToSqr))
+                .orElse(null);
+    }
+
+    /** Returns the local rally point used as the impact point for squad buffs. */
+    public static Vec3 combatSplashPoint(Human source) {
+        Human holder = combatSplashHolder(source);
+        return holder == null ? source.position() : holder.position();
     }
 
     private static boolean validThreat(Human human, LivingEntity target) {

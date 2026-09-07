@@ -44,6 +44,7 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.DifficultyInstance;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.*;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
@@ -452,6 +453,9 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     @Override
     public boolean hurt(@NotNull DamageSource damageSource, float amount) {
+        if (!this.level().isClientSide && amount >= this.getHealth() && consumeTotemForLethalDamage()) {
+            return false;
+        }
         if (damageSource.getDirectEntity() instanceof Projectile projectile
                 && isUsingItem()
                 && getUseItem().canPerformAction(net.minecraftforge.common.ToolActions.SHIELD_BLOCK)) {
@@ -512,6 +516,28 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             hasImpulse = false;
         }
         return hurt;
+    }
+
+    /** Keeps totem protection working for Human's custom equipment/inventory path. */
+    private boolean consumeTotemForLethalDamage() {
+        InteractionHand hand = null;
+        if (getMainHandItem().is(Items.TOTEM_OF_UNDYING)) {
+            hand = InteractionHand.MAIN_HAND;
+        } else if (getOffhandItem().is(Items.TOTEM_OF_UNDYING)) {
+            hand = InteractionHand.OFF_HAND;
+        }
+        if (hand == null) return false;
+
+        ItemStack totem = getItemInHand(hand);
+        totem.shrink(1);
+        setHealth(1.0F);
+        removeAllEffects();
+        addEffect(new MobEffectInstance(MobEffects.REGENERATION, 900, 1));
+        addEffect(new MobEffectInstance(MobEffects.ABSORPTION, 100, 1));
+        addEffect(new MobEffectInstance(MobEffects.FIRE_RESISTANCE, 800, 0));
+        level().broadcastEntityEvent(this, (byte) 35);
+        playSound(SoundEvents.TOTEM_USE, 1.0F, 1.0F);
+        return true;
     }
 
     public boolean isUnderMeleePressure() {
@@ -1270,15 +1296,18 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         this.setItemSlot(EquipmentSlot.HEAD, banner);
     }
 
-    public void putItemAway(ItemStack stack) {
-        for (int i = 0; i < 16; i++) {
+    public boolean putItemAway(ItemStack stack) {
+        if (getData() == null || stack.isEmpty()) return true;
+        for (int i = 0; i < getData().getInventoryItemsSize(); i++) {
             if (getData().getInventoryItem(i).isEmpty()) {
                 getData().setInventoryItem(i, stack.copy());
-                break;
+                stack.shrink(stack.getCount());
+                queueEquipmentReevaluation();
+                return true;
             }
         }
-        stack.shrink(stack.getCount());
-        queueEquipmentReevaluation();
+        // Never clear an equipped item when the durable inventory is full.
+        return false;
     }
 
     public boolean equipWeapon(Predicate<ItemStack> predicate) {
@@ -1686,6 +1715,10 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             tryEquipShield();
             tryUseMidFightEmergencyBuff();
             tryEquipWeapon();
+            tryUseEmergencySplash();
+            tryGatherForCombatSplash();
+            tryUseCoordinatedSplash();
+            tryDrinkCombatBuff();
             tryEatingTick();
             tryEquipPotion();
             if (isFleeing) {
@@ -1695,6 +1728,82 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         if (tickCount % (20 * 15) == 0) {
             queueEquipmentReevaluation();
         }
+    }
+
+    private void tryDrinkCombatBuff() {
+        if (getTarget() == null || isUsingItem() || getData() == null || isFleeing) return;
+        boolean needsSpeed = !hasEffect(MobEffects.MOVEMENT_SPEED);
+        boolean needsStrength = !hasEffect(MobEffects.DAMAGE_BOOST);
+        if (!needsSpeed && !needsStrength) return;
+
+        ItemStack potion = takeInventoryItem(stack -> {
+            if (!(stack.getItem() instanceof PotionItem)) return false;
+            Potion value = PotionUtils.getPotion(stack);
+            return needsStrength && (value == Potions.STRENGTH || value == Potions.STRONG_STRENGTH)
+                    || needsSpeed && (value == Potions.SWIFTNESS || value == Potions.LONG_SWIFTNESS);
+        });
+        if (potion.isEmpty()) return;
+
+        ItemStack previous = getMainHandItem();
+        if (!previous.isEmpty()) putItemAway(previous);
+        setItemSlot(EquipmentSlot.MAINHAND, potion);
+        eatingColldown = 5 * 20;
+        startUsingItem(InteractionHand.MAIN_HAND);
+    }
+
+    private void tryUseEmergencySplash() {
+        if (getTarget() == null || isUsingItem() || getData() == null
+                || getHealth() >= getMaxHealth() * Config.healCombatPercent.get()) return;
+        ItemStack potion = takeInventoryItem(stack -> {
+            if (!(stack.getItem() instanceof SplashPotionItem)) return false;
+            Potion value = PotionUtils.getPotion(stack);
+            return value == Potions.HEALING || value == Potions.STRONG_HEALING
+                    || value == Potions.REGENERATION || value == Potions.STRONG_REGENERATION;
+        });
+        if (potion.isEmpty()) return;
+        ItemStack previous = getMainHandItem();
+        if (!previous.isEmpty()) putItemAway(previous);
+        setItemSlot(EquipmentSlot.MAINHAND, potion);
+        performPotionRangedAttack(this, 0.1F);
+        syncHandData(EquipmentSlot.MAINHAND, getMainHandItem());
+    }
+
+    private void tryUseCoordinatedSplash() {
+        if (getTarget() == null || isUsingItem() || getData() == null || !SquadManager.readyForCombatSplash(this)) {
+            return;
+        }
+        ItemStack potion = takeInventoryItem(stack -> {
+            if (!(stack.getItem() instanceof SplashPotionItem)) return false;
+            Potion value = PotionUtils.getPotion(stack);
+            return value == Potions.STRENGTH || value == Potions.STRONG_STRENGTH
+                    || value == Potions.SWIFTNESS || value == Potions.LONG_SWIFTNESS;
+        });
+        if (potion.isEmpty()) return;
+        ItemStack previous = getMainHandItem();
+        if (!previous.isEmpty()) putItemAway(previous);
+        setItemSlot(EquipmentSlot.MAINHAND, potion);
+        performPotionRangedAttackAt(SquadManager.combatSplashPoint(this));
+        syncHandData(EquipmentSlot.MAINHAND, getMainHandItem());
+    }
+
+    private void tryGatherForCombatSplash() {
+        if (getTarget() == null || isUsingItem() || getData() == null
+                || SquadManager.readyForCombatSplash(this)) return;
+        Human holder = SquadManager.combatSplashHolder(this);
+        if (holder == null || holder == this && SquadManager.readyForCombatSplash(this)) return;
+        Vec3 rallyPoint = SquadManager.combatSplashPoint(this);
+        if (distanceToSqr(rallyPoint.x, rallyPoint.y, rallyPoint.z) > 4.0D) {
+            getNavigation().moveTo(rallyPoint.x, rallyPoint.y, rallyPoint.z, 1.0D);
+        }
+    }
+
+    public boolean hasCombatSplashAvailable() {
+        return findInventoryItem(stack -> {
+            if (!(stack.getItem() instanceof SplashPotionItem)) return false;
+            Potion value = PotionUtils.getPotion(stack);
+            return value == Potions.STRENGTH || value == Potions.STRONG_STRENGTH
+                    || value == Potions.SWIFTNESS || value == Potions.LONG_SWIFTNESS;
+        }) >= 0;
     }
 
     private void tryEquipShield() {
@@ -1783,7 +1892,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             }
 
             if (potion == Potions.POISON && getTarget().getMobType() == MobType.UNDEAD) {
-                potion = Potions.REGENERATION;
+                potion = Potions.HARMING;
             }
             if (potion == Potions.HARMING && getTarget().getMobType() == MobType.UNDEAD) {
                 potion = Potions.HEALING;
@@ -1795,7 +1904,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             ItemStack slotItem = this.getItemBySlot(handSlot);
 
             if (!slotItem.isEmpty()) {
-                putItemAway(slotItem);
+                if (!putItemAway(slotItem)) return;
             }
             potionItem.enchant(Enchantments.VANISHING_CURSE, 1);
             this.setItemSlot(handSlot, potionItem);
@@ -1814,17 +1923,50 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             if (isEyeInFluid(FluidTags.WATER)) {
                 this.setItemSlot(handSlot, PotionUtils.setPotion(Items.POTION.getDefaultInstance(), Potions.WATER_BREATHING));
             }
-            else if (this.chainingHealingFood) {
-                this.setItemSlot(handSlot, getRandomNormalFood());
-            }
-            else if (getTier() == HumanTier.LEVEL2 && random.nextFloat() < 0.5) {
-                this.setItemSlot(handSlot, EXTRA_EDIBLE_ITEMS[random.nextInt(EXTRA_EDIBLE_ITEMS.length)].copy());
-            } else {
-                this.setItemSlot(handSlot, getRandomNormalFood());
+            else {
+                ItemStack combatItem = takeInventoryItem(this::isCombatConsumable);
+                this.setItemSlot(handSlot, combatItem.isEmpty() ? getRandomNormalFood() : combatItem);
             }
             eatingColldown = countsAsHealingItem(this.getItemBySlot(handSlot)) ? 0 : 5 * 20;
             startUsingItem(handSlot == EquipmentSlot.MAINHAND ? InteractionHand.MAIN_HAND : InteractionHand.OFF_HAND);
         }
+    }
+
+    /** Returns whether combat can immediately improve health or hunger from inventory. */
+    public boolean hasCombatConsumableAvailable() {
+        if (getData() == null) return false;
+        if (getHealth() < getMaxHealth() * Config.healCombatPercent.get()) {
+            return findInventoryItem(this::isCombatConsumable) >= 0;
+        }
+        return (food.foodLevel < 20.0F || food.saturationLevel < food.foodLevel)
+                && findInventoryItem(this::isFood) >= 0;
+    }
+
+    private boolean isCombatConsumable(ItemStack stack) {
+        if (stack.isEmpty()) return false;
+        if (isFood(stack)) return true;
+        if (!(stack.getItem() instanceof PotionItem)) return false;
+        Potion potion = PotionUtils.getPotion(stack);
+        return potion == Potions.HEALING || potion == Potions.STRONG_HEALING
+                || potion == Potions.REGENERATION || potion == Potions.STRONG_REGENERATION;
+    }
+
+    private int findInventoryItem(Predicate<ItemStack> predicate) {
+        if (getData() == null) return -1;
+        for (int slot = 0; slot < getData().getInventoryItemsSize(); slot++) {
+            if (predicate.test(getData().getInventoryItem(slot))) return slot;
+        }
+        return -1;
+    }
+
+    private ItemStack takeInventoryItem(Predicate<ItemStack> predicate) {
+        int slot = findInventoryItem(predicate);
+        if (slot < 0) return ItemStack.EMPTY;
+        ItemStack stored = getData().getInventoryItem(slot);
+        ItemStack selected = stored.copyWithCount(1);
+        stored.shrink(1);
+        getData().setInventoryItem(slot, stored);
+        return selected;
     }
 
     private ItemStack getRandomNormalFood() {
@@ -2235,7 +2377,19 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
 
     @Override
     public Ingredient getFoodItems() {
-        return Ingredient.of(EDIBLE_ITEMS);
+        // Looted food must follow vanilla edibility rather than the spawn
+        // loadout list.  The latter intentionally contains only common food,
+        // which used to exclude golden apples and newly added food items.
+        return Ingredient.of(net.minecraft.core.registries.BuiltInRegistries.ITEM.stream()
+                .filter(Item::isEdible)
+                .map(Item::getDefaultInstance));
+    }
+
+    @Override
+    public boolean isFood(ItemStack stack) {
+        // Spawn loadouts are restricted, but ground loot accepts every
+        // vanilla edible item, including both golden apples.
+        return !stack.isEmpty() && stack.getItem().isEdible();
     }
 
     @Override
@@ -2301,6 +2455,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
     public boolean canHoldRangedCombatPosition(LivingEntity target) {
         return target != null && target.isAlive() && HumanUtil.isRangedWeapon(getMainHandItem())
                 && hasProjectileForWeapon(getMainHandItem()) && hasLineOfSight(target)
+                && target.getY() <= getY() + 1.0D
                 && distanceToSqr(target) <= RANGED_ATTACK_RADIUS * RANGED_ATTACK_RADIUS;
     }
 
@@ -2323,7 +2478,7 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
         ItemStack weaponStack = getItemInHand(ProjectileUtil.getWeaponHoldingHand(this, this::canFireProjectileWeapon));
         if (naturalSpawnLoadout && !hasProjectileForWeapon(weaponStack)) return;
         if (weaponStack.getItem() instanceof CrossbowItem) {
-            this.performCrossbowAttack(this, 1.6F);
+            performCrossbowAttack(target, weaponStack);
         } else {
             ItemStack itemstack = getProjectile(weaponStack);
             AbstractArrow mobArrow = ProjectileUtil.getMobArrow(this, itemstack, distanceFactor);
@@ -2337,6 +2492,22 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             this.playSound(SoundEvents.SKELETON_SHOOT, 1.0F, 1.0F / (this.getRandom().nextFloat() * 0.4F + 0.8F));
             this.level().addFreshEntity(mobArrow);
         }
+    }
+
+    /**
+     * Fires the loaded bolt directly instead of relying on the vanilla
+     * CrossbowAttackMob helper, whose internal charged-projectile NBT is not
+     * kept in sync with Human's durable inventory.
+     */
+    private void performCrossbowAttack(LivingEntity target, ItemStack crossbow) {
+        ItemStack projectileStack = getProjectile(crossbow);
+        if (projectileStack.isEmpty()) return;
+
+        AbstractArrow arrow = ProjectileUtil.getMobArrow(this, projectileStack, 1.0F);
+        shootCrossbowProjectile(target, crossbow, arrow, 0.0F);
+        level().addFreshEntity(arrow);
+        playSound(SoundEvents.CROSSBOW_SHOOT, 1.0F,
+                1.0F / (getRandom().nextFloat() * 0.4F + 0.8F));
     }
 
     public void performRangedAttackTrident(LivingEntity p_32356_, float p_32357_) {
@@ -2368,10 +2539,27 @@ public class Human extends HumanEntity implements RangedAttackMob, CrossbowAttac
             return;
         }
 
+        ItemStack heldPotion = getMainHandItem().getItem() instanceof SplashPotionItem
+                ? getMainHandItem() : getOffhandItem();
+        if (heldPotion.getItem() instanceof SplashPotionItem) {
+            Potion potion = PotionUtils.getPotion(heldPotion);
+            if (potion == Potions.STRENGTH || potion == Potions.STRONG_STRENGTH
+                    || potion == Potions.SWIFTNESS || potion == Potions.LONG_SWIFTNESS) {
+                // Beneficial splash potions are reserved for squad self-buffs;
+                // never let the offensive potion goal throw them at an enemy.
+                return;
+            }
+        }
+
         Vec3 deltaMovement = target.getDeltaMovement();
-        double $$3 = target.getX() + deltaMovement.x - this.getX();
-        double $$4 = target.getEyeY() - 1.1 - this.getY();
-        double $$5 = target.getZ() + deltaMovement.z - this.getZ();
+        performPotionRangedAttackAt(new Vec3(target.getX() + deltaMovement.x,
+                target.getEyeY() - 1.1, target.getZ() + deltaMovement.z));
+    }
+
+    private void performPotionRangedAttackAt(Vec3 target) {
+        double $$3 = target.x - this.getX();
+        double $$4 = target.y - this.getY();
+        double $$5 = target.z - this.getZ();
         double $$6 = Math.sqrt($$3 * $$3 + $$5 * $$5);
 
         ItemStack potionStack = null;

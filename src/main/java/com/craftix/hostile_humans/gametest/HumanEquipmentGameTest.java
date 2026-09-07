@@ -5,6 +5,7 @@ import com.craftix.hostile_humans.entity.ai.goal.ItemLootGoal;
 import com.craftix.hostile_humans.entity.entities.Human;
 import com.craftix.hostile_humans.entity.entities.ModEntityType;
 import com.craftix.hostile_humans.entity.equipment.MeleeWeaponSelector;
+import com.craftix.hostile_humans.entity.type.human.HumanLootPolicy;
 import com.mojang.authlib.GameProfile;
 import net.minecraft.core.BlockPos;
 import net.minecraft.gametest.framework.GameTest;
@@ -317,6 +318,17 @@ public final class HumanEquipmentGameTest {
                     "Human did not equip the useful item it looted");
             helper.succeed();
         });
+    }
+
+    @GameTest(template = TEMPLATE, templateNamespace = "hostile_humans", batch = "tacticalEquipment", timeoutTicks = 40)
+    public static void allVanillaFoodIsUsefulGroundLoot(GameTestHelper helper) {
+        Human human = createHuman(helper, new BlockPos(2, 1, 2));
+        helper.assertTrue(HumanLootPolicy.isUseful(human, new ItemStack(Items.BREAD)), "Bread was rejected");
+        helper.assertTrue(HumanLootPolicy.isUseful(human, new ItemStack(Items.GOLDEN_APPLE)),
+                "Golden apple was rejected");
+        helper.assertTrue(HumanLootPolicy.isUseful(human, new ItemStack(Items.ENCHANTED_GOLDEN_APPLE)),
+                "Enchanted golden apple was rejected");
+        helper.succeed();
     }
 
     private static Human createHuman(GameTestHelper helper, BlockPos localPos) {

@@ -233,21 +233,12 @@ tasks.named('processResources', ProcessResources).configure {
 
 tasks.named('compileJava', JavaCompile).configure {
     inputs.property('gameTestFilter', requestedGameTestScopes.map { it.join(',') }.orElse('all'))
+}
 
-    if (requestedGameTestScopes.isPresent()) {
-        def selectedClasses = requestedGameTestScopes.get()
-                .collectMany { gameTestClassesByScope[it] }
-                .toSet()
-        options.incremental = false
-        exclude { details ->
-            details.path.startsWith('com/craftix/hostile_humans/gametest/')
-                    && !selectedClasses.contains(details.file.name - '.java')
-        }
-        doFirst {
-            delete fileTree(destinationDirectory) {
-                include 'com/craftix/hostile_humans/gametest/**'
-            }
-        }
+tasks.configureEach { task ->
+    if (task.name == 'runGameTestServer' && task instanceof JavaExec && requestedGameTestScopes.isPresent()) {
+        task.jvmArgs "-Dhostile_humans.gameTestFilter=" + requestedGameTestScopes.get()
+                .collectMany { gameTestClassesByScope[it] }.join(',')
     }
 }
 

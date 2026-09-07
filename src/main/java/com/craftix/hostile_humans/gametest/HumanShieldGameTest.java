@@ -395,12 +395,16 @@ public final class HumanShieldGameTest {
         human.setCombatSkillTierOverride(CombatSkillTier.T1);
         human.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
         human.setTarget(target);
-        human.lastReceivedCombatHitTick = human.tickCount;
-        human.consecutiveReceivedCombatHits = 2;
+        // Start from the state this test is about. Shield raising and reaction
+        // timing are covered by t1HoldsShieldUnderSwordPressure; this test
+        // must not fail merely because the wind-up starts before the shield is
+        // raised on a particular server tick.
+        human.startUsingItem(InteractionHand.OFF_HAND);
+        human.shieldUpTicks = 20;
         assertLineOfSight(helper, human, target);
 
         helper.startSequence()
-                .thenIdle(8)
+                .thenIdle(1)
                 .thenExecute(() -> {
                     human.lastReceivedCombatHitTick = human.tickCount;
                     human.consecutiveReceivedCombatHits = 3;
